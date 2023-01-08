@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -217,11 +217,14 @@ Thread* ThreadPool::get_best_thread() const {
         minScore = std::min(minScore, th->rootMoves[0].score);
 
     // Vote according to score and depth, and select the best thread
-    for (Thread* th : *this)
-    {
-        votes[th->rootMoves[0].pv[0]] +=
-            (th->rootMoves[0].score - minScore + 14) * int(th->completedDepth);
+    auto thread_value = [minScore](Thread* th) {
+            return (th->rootMoves[0].score - minScore + 14) * int(th->completedDepth);
+        };
 
+    for (Thread* th : *this)
+        votes[th->rootMoves[0].pv[0]] += thread_value(th);
+
+    for (Thread* th : *this)
         if (abs(bestThread->rootMoves[0].score) >= VALUE_MATE_IN_MAX_PLY)
         {
             // Make sure we pick the shortest mate / stave off mate the longest
@@ -232,10 +235,9 @@ Thread* ThreadPool::get_best_thread() const {
                  || (   th->rootMoves[0].score > VALUE_MATED_IN_MAX_PLY
                      && (   votes[th->rootMoves[0].pv[0]] > votes[bestThread->rootMoves[0].pv[0]]
                          || (   votes[th->rootMoves[0].pv[0]] == votes[bestThread->rootMoves[0].pv[0]]
-                             && th->rootMoves[0].pv.size() > bestThread->rootMoves[0].pv.size()))))
-
+                             &&   thread_value(th) * int(th->rootMoves[0].pv.size() > 2)
+                                > thread_value(bestThread) * int(bestThread->rootMoves[0].pv.size() > 2)))))
             bestThread = th;
-    }
 
     return bestThread;
 }
