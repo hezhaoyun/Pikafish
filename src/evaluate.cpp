@@ -39,7 +39,7 @@ namespace Stockfish {
 
 namespace Eval {
 
-  string currentEvalFileName = "";
+  string currentEvalFileName = "None";
 
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
   /// receives a UCI command "setoption name EvalFile value .*.nnue"
@@ -50,7 +50,8 @@ namespace Eval {
   void NNUE::init() {
 
     string eval_file = string(Options["EvalFile"]);
-    if (eval_file.empty()) eval_file = EvalFileDefaultName;
+    if (eval_file.empty())
+        eval_file = EvalFileDefaultName;
 
     vector<string> dirs = { "" , CommandLine::binaryDirectory };
 
@@ -71,7 +72,8 @@ namespace Eval {
   void NNUE::verify() {
 
     string eval_file = string(Options["EvalFile"]);
-    if (eval_file.empty()) eval_file = EvalFileDefaultName;
+    if (eval_file.empty())
+        eval_file = EvalFileDefaultName;
 
     if (currentEvalFileName != eval_file)
     {
