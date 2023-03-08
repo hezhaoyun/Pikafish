@@ -98,7 +98,7 @@ namespace Trace {
 
   enum Tracing { NO_TRACE, TRACE };
 
-  double to_cp(Value v) { return double(v) / PawnValueEg; }
+  static double to_cp(Value v) { return double(v) / UCI::NormalizeToPawnValue; }
 }
 
 using namespace Trace;
@@ -109,23 +109,22 @@ using namespace Trace;
 Value Eval::evaluate(const Position& pos, int* complexity) {
 
   int nnueComplexity;
-  Value m = pos.material_diff();
-  Value v = NNUE::evaluate(pos, &nnueComplexity);
-  // Blend nnue complexity with material complexity
+  Value     nnue = NNUE::evaluate(pos, true, &nnueComplexity);
+  Value material = pos.material_diff();
+
+  // Blend nnue complexity with (semi)classical complexity
   Value optimism = pos.this_thread()->optimism[pos.side_to_move()];
-  nnueComplexity = (  396 * nnueComplexity
-                    + 415 * abs(m - v)
-                    + (optimism > 0 ? int(optimism) * int(m - v) : 0)
-                    ) / 1024;
+  nnueComplexity = (477 * nnueComplexity + (401 + optimism) * abs(material - nnue)) / 1024;
   if (complexity) // Return hybrid NNUE complexity to caller
       *complexity = nnueComplexity;
 
-  int scale = 967 + 141 * pos.material_sum() / 4096;
-  optimism = optimism * (260 + nnueComplexity) / 256;
-  v = (v * scale + optimism * (scale - 854)) / 1024;
+  // scale nnue score according to material and optimism
+  int scale = 668 + 106 * pos.material_sum() / 4096;
+  optimism = optimism * (281 + nnueComplexity) / 256;
+  Value v = (nnue * scale + optimism * (scale - 740)) / 1024;
 
   // Damp down the evaluation linearly when shuffling
-  v = v * (126 - pos.rule60_count()) / 120;
+  v = v * (205 - pos.rule60_count()) / 120;
 
   // Guarantee evaluation does not hit the mate range
   v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);

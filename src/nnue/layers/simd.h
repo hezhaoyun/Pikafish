@@ -153,7 +153,7 @@ namespace Stockfish::Simd {
       asm(
         "vpdpbusd %[b0], %[a0], %[acc]\n\t"
         "vpdpbusd %[b1], %[a1], %[acc]\n\t"
-        : [acc]"+v"(acc)
+        : [acc]"+&v"(acc)
         : [a0]"v"(a0), [b0]"vm"(b0), [a1]"v"(a1), [b1]"vm"(b1)
       );
 #   else
@@ -249,7 +249,7 @@ namespace Stockfish::Simd {
       asm(
         VNNI_PREFIX "vpdpbusd %[b0], %[a0], %[acc]\n\t"
         VNNI_PREFIX "vpdpbusd %[b1], %[a1], %[acc]\n\t"
-        : [acc]"+v"(acc)
+        : [acc]"+&v"(acc)
         : [a0]"v"(a0), [b0]"vm"(b0), [a1]"v"(a1), [b1]"vm"(b1)
       );
 #   else
@@ -339,6 +339,19 @@ namespace Stockfish::Simd {
       product0 = _mm_madd_epi16(product0, _mm_set1_epi16(1));
       acc = _mm_add_epi32(acc, product0);
 #   endif
+    }
+
+#endif
+
+#if defined (USE_NEON_DOTPROD)
+
+    [[maybe_unused]] static void dotprod_m128_add_dpbusd_epi32x2(
+        int32x4_t& acc,
+        int8x16_t a0, int8x16_t b0,
+        int8x16_t a1, int8x16_t b1) {
+
+        acc = vdotq_s32(acc, a0, b0);
+        acc = vdotq_s32(acc, a1, b1);
     }
 
 #endif

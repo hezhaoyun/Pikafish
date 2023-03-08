@@ -65,7 +65,7 @@ struct StateInfo {
 /// start position to the position just before the search starts). Needed by
 /// 'draw by repetition' detection. Use a std::deque because pointers to
 /// elements are not invalidated upon list resizing.
-typedef std::unique_ptr<std::deque<StateInfo>> StateListPtr;
+using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 
 
 /// Position class stores information regarding the board representation as
@@ -142,6 +142,7 @@ public:
   Thread* this_thread() const;
   bool rule_judge(Value& result, int ply = 0) const;
   int rule60_count() const;
+  bool has_mate_threat(Depth d = -1);
   ChaseMap chased(Color c);
   Value material_sum() const;
   Value material_diff() const;
