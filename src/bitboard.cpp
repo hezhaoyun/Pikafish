@@ -262,7 +262,7 @@ namespace {
           m.mask &= ~edges;
 
         if (HasPext)
-          m.shift = popcount(uint64_t(m.mask));
+          m.shift = popcount((unsigned long long)(m.mask));
         else
           m.shift = 128 - popcount(m.mask);
 

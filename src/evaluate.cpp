@@ -56,13 +56,15 @@ namespace Eval {
     vector<string> dirs = { "" , CommandLine::binaryDirectory };
 
     for (string directory : dirs)
-        if (currentEvalFileName != eval_file)
+    {
+        ifstream stream(directory + eval_file, ios::binary);
+        stringstream ss = read_zipped_nnue(directory + eval_file);
+        if (load_eval(eval_file, stream) || load_eval(eval_file, ss))
         {
-            ifstream stream(directory + eval_file, ios::binary);
-            stringstream ss = read_zipped_nnue(directory + eval_file);
-            if (load_eval(eval_file, stream) || load_eval(eval_file, ss))
-                currentEvalFileName = eval_file;
+            currentEvalFileName = eval_file;
+            break;
         }
+    }
   }
 
   /// NNUE::verify() verifies that the last net used was loaded successfully
