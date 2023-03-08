@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ namespace Stockfish::Eval::NNUE {
   // Hash value of evaluation function structure
   constexpr std::uint32_t HashValue =
       FeatureTransformer::get_hash_value() ^ Network::get_hash_value();
+
 
   // Deleter for automating release of memory area
   template <typename T>

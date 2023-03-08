@@ -1,9 +1,12 @@
 {
     "files.associations": {
+<<<<<<< HEAD
         "concepts": "cpp",
         "ios": "cpp",
         "istream": "cpp",
         "locale": "cpp",
+=======
+>>>>>>> 1ed618ba75a86386d08decf68395a245f1c64395
         "ostream": "cpp"
     }
 }

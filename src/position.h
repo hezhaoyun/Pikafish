@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -65,7 +65,7 @@ struct StateInfo {
 /// start position to the position just before the search starts). Needed by
 /// 'draw by repetition' detection. Use a std::deque because pointers to
 /// elements are not invalidated upon list resizing.
-typedef std::unique_ptr<std::deque<StateInfo>> StateListPtr;
+using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 
 
 /// Position class stores information regarding the board representation as
@@ -142,6 +142,7 @@ public:
   Thread* this_thread() const;
   bool rule_judge(Value& result, int ply = 0) const;
   int rule60_count() const;
+  bool has_mate_threat(Depth d = -1);
   ChaseMap chased(Color c);
   Value material_sum() const;
   Value material_diff() const;
@@ -187,7 +188,7 @@ private:
   int idBoard[SQUARE_NB];
 };
 
-extern std::ostream& operator<<(std::ostream& os, const Position& pos);
+std::ostream& operator<<(std::ostream& os, const Position& pos);
 
 inline Color Position::side_to_move() const {
   return sideToMove;
