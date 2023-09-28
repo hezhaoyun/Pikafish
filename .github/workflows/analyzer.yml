@@ -47,7 +47,7 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
 
-  IYUW:
+  IWYU:
     name: Check includes
     runs-on: ubuntu-latest
     defaults:
