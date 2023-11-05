@@ -51,14 +51,15 @@ further discussion._
 
 _First time contributors should add their name to [AUTHORS](../AUTHORS)._
 
-_Stockfish's development is not focused on adding new features. Thus any pull
+_Pikafish's development is not focused on adding new features. Thus any pull
 request introducing new features will potentially be closed without further
 discussion._
 
 ## Code Style
 
-We do not have a strict code style. But it is best to stick to the existing
-style of the file you are editing.
+Changes to Pikafish C++ code should respect our coding style defined by
+[.clang-format](.clang-format). You can format your changes by running
+`make format`. This requires clang-format version 17 to be installed on your system.
 
 ## Community and Communication
 

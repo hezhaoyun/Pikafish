@@ -20,9 +20,9 @@
 ### ==========================================================================
 
 ### Establish the operating system name
-KERNEL = $(shell uname -s)
+KERNEL := $(shell uname -s)
 ifeq ($(KERNEL),Linux)
-	OS = $(shell uname -o)
+	OS := $(shell uname -o)
 endif
 
 ### Target Windows OS
@@ -33,7 +33,7 @@ ifeq ($(OS),Windows_NT)
 else ifeq ($(COMP),mingw)
 	target_windows = yes
 	ifeq ($(WINE_PATH),)
-		WINE_PATH = $(shell which wine)
+		WINE_PATH := $(shell which wine)
 	endif
 endif
 
@@ -57,6 +57,15 @@ SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp \
 	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2_hm.cpp \
 	external/zip.cpp
+
+HEADERS = benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.h magics.h \
+           nnue/evaluate_nnue.h nnue/features/half_ka_v2_hm.h nnue/layers/affine_transform.h \
+           nnue/layers/affine_transform_sparse_input.h nnue/layers/clipped_relu.h nnue/layers/simd.h \
+           nnue/layers/sqr_clipped_relu.h nnue/nnue_accumulator.h nnue/nnue_architecture.h \
+           nnue/nnue_common.h nnue/nnue_feature_transformer.h position.h \
+           search.h thread.h thread_win32_osx.h timeman.h \
+           tt.h tune.h types.h uci.h \
+           external/zip.h external/miniz.h
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
 
@@ -109,7 +118,7 @@ ifeq ($(ARCH),)
 endif
 
 ifeq ($(ARCH), native)
-   override ARCH = $(shell ../scripts/get_native_properties.sh | cut -d " " -f 1)
+   override ARCH := $(shell $(SHELL) ../scripts/get_native_properties.sh | cut -d " " -f 1)
 endif
 
 # explicitly check for the list of supported architectures (as listed with make help),
@@ -145,6 +154,12 @@ neon = no
 dotprod = no
 arm_version = 0
 STRIP = strip
+
+ifneq ($(shell which clang-format-17 2> /dev/null),)
+	CLANG-FORMAT = clang-format-17
+else
+	CLANG-FORMAT = clang-format
+endif
 
 ### 2.2 Architecture specific
 
@@ -530,8 +545,8 @@ endif
 
 ### Sometimes gcc is really clang
 ifeq ($(COMP),gcc)
-	gccversion = $(shell $(CXX) --version 2>/dev/null)
-	gccisclang = $(findstring clang,$(gccversion))
+	gccversion := $(shell $(CXX) --version 2>/dev/null)
+	gccisclang := $(findstring clang,$(gccversion))
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
@@ -589,7 +604,7 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(comp),clang)
-		clangmajorversion = $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
+		clangmajorversion := $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
 		ifeq ($(shell expr $(clangmajorversion) \< 16),1)
 			CXXFLAGS += -fexperimental-new-pass-manager
 		endif
@@ -676,7 +691,6 @@ ifeq ($(sse2),yes)
 endif
 
 ifeq ($(mmx),yes)
-	CXXFLAGS += -DUSE_MMX
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mmmx
 	endif
@@ -705,24 +719,24 @@ ifeq ($(pext),yes)
 	endif
 endif
 
-### 3.7.1 Try to include git commit sha for versioning
-GIT_SHA = $(shell git rev-parse HEAD 2>/dev/null | cut -c 1-8)
+### 3.8.1 Try to include git commit sha for versioning
+GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null | cut -c 1-8)
 ifneq ($(GIT_SHA), )
 	CXXFLAGS += -DGIT_SHA=$(GIT_SHA)
 endif
 
-### 3.7.2 Try to include git commit date for versioning
-GIT_DATE = $(shell git show -s --date=format:'%Y%m%d' --format=%cd HEAD 2>/dev/null)
+### 3.8.2 Try to include git commit date for versioning
+GIT_DATE := $(shell git show -s --date=format:'%Y%m%d' --format=%cd HEAD 2>/dev/null)
 ifneq ($(GIT_DATE), )
 	CXXFLAGS += -DGIT_DATE=$(GIT_DATE)
 endif
 
-### 3.7.3 Try to include architecture
+### 3.8.3 Try to include architecture
 ifneq ($(ARCH), )
 	CXXFLAGS += -DARCH=$(ARCH)
 endif
 
-### 3.8 Link Time Optimization
+### 3.9 Link Time Optimization
 ### This is a mix of compile and link time options because the lto link phase
 ### needs access to the optimization flags.
 ifeq ($(optimize),yes)
@@ -757,7 +771,7 @@ ifeq ($(debug), no)
 endif
 endif
 
-### 3.9 Android 5 can only run position independent executables. Note that this
+### 3.10 Android 5 can only run position independent executables. Note that this
 ### breaks Android 4.0 and earlier.
 ifeq ($(OS), Android)
 	CXXFLAGS += -fPIE
@@ -795,11 +809,11 @@ help:
 	@echo "x86-64-sse41-popcnt     > x86 64-bit with sse41 and popcnt support"
 	@echo "x86-64-modern           > deprecated, currently x86-64-sse41-popcnt"
 	@echo "x86-64-ssse3            > x86 64-bit with ssse3 support"
-	@echo "x86-64-sse3-popcnt      > x86 64-bit with sse3 and popcnt support"
+	@echo "x86-64-sse3-popcnt      > x86 64-bit with sse3 compile and popcnt support"
 	@echo "x86-64                  > x86 64-bit generic (with sse2 support)"
 	@echo "x86-32-sse41-popcnt     > x86 32-bit with sse41 and popcnt support"
 	@echo "x86-32-sse2             > x86 32-bit with sse2 support"
-	@echo "x86-32                  > x86 32-bit generic (with mmx and sse support)"
+	@echo "x86-32                  > x86 32-bit generic (with mmx compile support)"
 	@echo "ppc-64                  > PPC 64-bit"
 	@echo "ppc-32                  > PPC 32-bit"
 	@echo "armv7                   > ARMv7 32-bit"
@@ -843,7 +857,8 @@ endif
 	config-sanity \
 	icx-profile-use icx-profile-make \
 	gcc-profile-use gcc-profile-make \
-	clang-profile-use clang-profile-make FORCE
+	clang-profile-use clang-profile-make FORCE \
+	format analyze
 
 analyze: net config-sanity objclean
 	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
@@ -892,6 +907,9 @@ profileclean:
 	@rm -f pikafish.*lt*
 	@rm -f pikafish.res
 	@rm -f ./-lstdc++.res
+
+format:
+	$(CLANG-FORMAT) -i $(SRCS) $(HEADERS) -style=file
 
 default:
 	help

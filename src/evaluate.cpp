@@ -39,21 +39,21 @@ namespace Stockfish {
 
 namespace Eval {
 
-  std::string currentEvalFileName = "None";
+std::string currentEvalFileName = "None";
 
-  /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
-  /// receives a UCI command "setoption name EvalFile value .*.nnue"
-  /// The name of the NNUE network is always retrieved from the EvalFile option.
-  /// We search the given network in two locations: in the active working directory and
-  /// in the engine directory.
-
-  void NNUE::init() {
+// Tries to load a NNUE network at startup time, or when the engine
+// receives a UCI command "setoption name EvalFile value .*.nnue"
+// The name of the NNUE network is always retrieved from the EvalFile option.
+// We search the given network in two locations: in the active working directory and
+// in the engine directory.
+void NNUE::init() {
 
     std::string eval_file = std::string(Options["EvalFile"]);
     if (eval_file.empty())
         eval_file = EvalFileDefaultName;
 
-    std::vector<std::string> dirs = { "" , CommandLine::binaryDirectory };
+    std::vector<std::string> dirs = {"", CommandLine::binaryDirectory};
+
     for (const std::string& directory : dirs)
     {
         std::ifstream stream(directory + eval_file, std::ios::binary);
@@ -66,8 +66,8 @@ namespace Eval {
     }
   }
 
-  /// NNUE::verify() verifies that the last net used was loaded successfully
-  void NNUE::verify() {
+// Verifies that the last net used was loaded successfully
+void NNUE::verify() {
 
     std::string eval_file = std::string(Options["EvalFile"]);
     if (eval_file.empty())
@@ -75,10 +75,16 @@ namespace Eval {
 
     if (currentEvalFileName != eval_file)
     {
-        std::string msg1 = "Network evaluation parameters compatible with the engine must be available.";
+
+        std::string msg1 =
+          "Network evaluation parameters compatible with the engine must be available.";
         std::string msg2 = "The network file " + eval_file + " was not loaded successfully.";
-        std::string msg3 = "The UCI option EvalFile might need to specify the full path, including the directory name, to the network file.";
-        std::string msg4 = "The default net can be downloaded from: https://github.com/official-pikafish/Networks/releases/download/master-net/" + std::string(EvalFileDefaultName);
+        std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
+                           "including the directory name, to the network file.";
+        std::string msg4 =
+          "The default net can be downloaded from: "
+          "https://github.com/official-pikafish/Networks/releases/download/master-net/"
+          + std::string(EvalFileDefaultName);
         std::string msg5 = "The engine will be terminated now.";
 
         sync_cout << "info string ERROR: " << msg1 << sync_endl;
@@ -91,87 +97,86 @@ namespace Eval {
     }
 
     sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
-  }
+}
 }
 
 
-/// simple_eval() returns a static, purely materialistic evaluation of
-/// the position from the point of view of the given color. It can be
-/// divided by PawnValue to get an approximation of the material advantage
-/// on the board in terms of pawns.
-
+// Returns a static, purely materialistic evaluation of the position from
+// the point of view of the given color. It can be divided by PawnValue to get
+// an approximation of the material advantage on the board in terms of pawns.
 Value Eval::simple_eval(const Position& pos, Color c) {
-   return pos.material(c) - pos.material(~c);
+    return PawnValue * (pos.count<PAWN>(c) - pos.count<PAWN>(~c))
+         + AdvisorValue * (pos.count<ADVISOR>(c) - pos.count<ADVISOR>(~c))
+         + BishopValue * (pos.count<BISHOP>(c) - pos.count<BISHOP>(~c))
+         + (pos.major_material(c) - pos.major_material(~c));
 }
 
-/// evaluate() is the evaluator for the outer world. It returns a static
-/// evaluation of the position from the point of view of the side to move.
-
+// Evaluate is the evaluator for the outer world. It returns a static
+// evaluation of the position from the point of view of the side to move.
 Value Eval::evaluate(const Position& pos) {
 
-  assert(!pos.checkers());
+    assert(!pos.checkers());
 
-  Value v;
-  Color stm      = pos.side_to_move();
-  int shuffling  = pos.rule60_count();
-  int simpleEval = simple_eval(pos, stm);
+    Value v;
+    Color stm        = pos.side_to_move();
+    int   shuffling  = pos.rule60_count();
+    int   simpleEval = simple_eval(pos, stm);
 
-  int nnueComplexity;
-  Value nnue = NNUE::evaluate(pos, true, &nnueComplexity);
+    int   nnueComplexity;
+    Value nnue = NNUE::evaluate(pos, true, &nnueComplexity);
 
-  int material = pos.material() / 42;
-  Value optimism = pos.this_thread()->optimism[stm];
+    Value optimism = pos.this_thread()->optimism[stm];
 
-  // Blend optimism and eval with nnue complexity and material imbalance
-  optimism += optimism * (nnueComplexity + abs(simpleEval - nnue)) / 708;
-  nnue     -= nnue     * (nnueComplexity + abs(simpleEval - nnue)) / 35116;
+    // Blend optimism and eval with nnue complexity and material imbalance
+    optimism += optimism * (nnueComplexity + abs(simpleEval - nnue)) / 708;
+    nnue -= nnue * (nnueComplexity + abs(simpleEval - nnue)) / 32858;
 
-  v = (nnue * (625 + material) + optimism * (130 + material)) / 1225;
+    int mm = pos.major_material() / 42;
+    v      = (nnue * (545 + mm) + optimism * (128 + mm)) / 1312;
 
-  // Damp down the evaluation linearly when shuffling
-  v = v * (268 - shuffling) / 175;
+    // Damp down the evaluation linearly when shuffling
+    v = v * (263 - shuffling) / 192;
 
-  // Guarantee evaluation does not hit the mate range
-  v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
+    // Guarantee evaluation does not hit the mate range
+    v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
 
-  return v;
+    return v;
 }
 
-/// trace() is like evaluate(), but instead of returning a value, it returns
-/// a string (suitable for outputting to stdout) that contains the detailed
-/// descriptions and values of each evaluation term. Useful for debugging.
-/// Trace scores are from white's point of view
-
+// Like evaluate(), but instead of returning a value, it returns
+// a string (suitable for outputting to stdout) that contains the detailed
+// descriptions and values of each evaluation term. Useful for debugging.
+// Trace scores are from white's point of view
 std::string Eval::trace(Position& pos) {
 
-  if (pos.checkers())
-      return "Final evaluation: none (in check)";
+    if (pos.checkers())
+        return "Final evaluation: none (in check)";
 
-  std::stringstream ss;
-  ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
+    std::stringstream ss;
+    ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
 
-  Value v;
+    Value v;
 
-  // Reset any global variable used in eval
-  pos.this_thread()->bestValue       = VALUE_ZERO;
-  pos.this_thread()->optimism[WHITE] = VALUE_ZERO;
-  pos.this_thread()->optimism[BLACK] = VALUE_ZERO;
+    // Reset any global variable used in eval
+    pos.this_thread()->bestValue       = VALUE_ZERO;
+    pos.this_thread()->optimism[WHITE] = VALUE_ZERO;
+    pos.this_thread()->optimism[BLACK] = VALUE_ZERO;
 
-  ss << '\n' << NNUE::trace(pos) << '\n';
+    ss << '\n' << NNUE::trace(pos) << '\n';
 
-  ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
+    ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-  v = NNUE::evaluate(pos);
-  v = pos.side_to_move() == WHITE ? v : -v;
-  ss << "NNUE evaluation        " << 0.01 * UCI::to_cp(v) << " (white side)\n";
+    v = NNUE::evaluate(pos);
+    v = pos.side_to_move() == WHITE ? v : -v;
+    ss << "NNUE evaluation        " << 0.01 * UCI::to_cp(v) << " (white side)\n";
 
-  v = evaluate(pos);
-  v = pos.side_to_move() == WHITE ? v : -v;
-  ss << "Final evaluation       " << 0.01 * UCI::to_cp(v) << " (white side)";
-  ss << " [with scaled NNUE, ...]";
-  ss << "\n";
+    v = evaluate(pos);
+    v = pos.side_to_move() == WHITE ? v : -v;
+    ss << "Final evaluation       " << 0.01 * UCI::to_cp(v) << " (white side)";
+    ss << " [with scaled NNUE, ...]";
+    ss << "\n";
 
-  return ss.str();
+    return ss.str();
 }
 
-} // namespace Stockfish
+}  // namespace Stockfish
