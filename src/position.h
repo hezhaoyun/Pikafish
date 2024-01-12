@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -139,7 +139,7 @@ class Position {
     void undo_null_move();
 
     // Static Exchange Evaluation
-    bool see_ge(Move m, Value threshold = VALUE_ZERO) const;
+    bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
     Key key() const;
@@ -152,7 +152,6 @@ class Position {
     Thread*  this_thread() const;
     bool     rule_judge(Value& result, int ply = 0) const;
     int      rule60_count() const;
-    bool     has_mate_threat(Depth d = -1);
     uint16_t chased(Color c);
     Value    major_material(Color c) const;
     Value    major_material() const;
@@ -209,7 +208,7 @@ inline Piece Position::piece_on(Square s) const {
 
 inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
-inline Piece Position::moved_piece(Move m) const { return piece_on(from_sq(m)); }
+inline Piece Position::moved_piece(Move m) const { return piece_on(m.from_sq()); }
 
 inline Bitboard Position::pieces(PieceType pt) const { return byTypeBB[pt]; }
 
@@ -289,7 +288,7 @@ inline int Position::rule60_count() const { return st->rule60; }
 
 inline bool Position::capture(Move m) const {
     assert(is_ok(m));
-    return !empty(to_sq(m));
+    return !empty(m.to_sq());
 }
 
 inline Piece Position::captured_piece() const { return st->capturedPiece; }

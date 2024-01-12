@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -35,10 +35,12 @@ class Position;
 
 namespace Stockfish::Eval::NNUE::Features {
 
-// Feature HalfKAv2_hm: Combination of the position of own king and the position of pieces.
+// Feature HalfKAv2_hm: Combination of the position of own king and the
+// position of pieces. Position mirrored such that king is always on d..e files.
 class HalfKAv2_hm {
 
-    // unique number for each piece type on each square
+    // clang-format off
+    // Unique number for each piece type on each square
     enum {
         PS_NONE     = 0,
         PS_W_ROOK   = 0,
@@ -47,17 +49,14 @@ class HalfKAv2_hm {
         PS_B_CANNON = 3 * SQUARE_NB,
         PS_W_KNIGHT = 4 * SQUARE_NB,
         PS_B_KNIGHT = 5 * SQUARE_NB,
-        PS_AB_W_KP =
-          6
-          * SQUARE_NB,  // White King and Pawn are merged into one plane, also used for Advisor and Bishop
-        PS_B_KP = 7 * SQUARE_NB,  // Black King and Pawn are merged into one plane
-        PS_NB   = 8 * SQUARE_NB
+        PS_AB_W_KP  = 6 * SQUARE_NB,  // White King and Pawn are merged into one plane, also used for Advisor and Bishop
+        PS_B_KP     = 7 * SQUARE_NB,  // Black King and Pawn are merged into one plane
+        PS_NB       = 8 * SQUARE_NB
     };
 
-    // clang-format off
     static constexpr IndexType PieceSquareIndex[COLOR_NB][PIECE_NB] = {
-      // convention: W - us, B - them
-      // viewed from other side, W and B are reversed
+      // Convention: W - us, B - them
+      // Viewed from other side, W and B are reversed
       { PS_NONE, PS_W_ROOK, PS_AB_W_KP, PS_W_CANNON, PS_AB_W_KP, PS_W_KNIGHT, PS_AB_W_KP, PS_AB_W_KP,
         PS_NONE, PS_B_ROOK, PS_AB_W_KP, PS_B_CANNON, PS_B_KP   , PS_B_KNIGHT, PS_AB_W_KP, PS_B_KP   , },
       { PS_NONE, PS_B_ROOK, PS_AB_W_KP, PS_B_CANNON, PS_B_KP   , PS_B_KNIGHT, PS_AB_W_KP, PS_B_KP   ,
@@ -148,8 +147,8 @@ class HalfKAv2_hm {
     static int update_cost(const StateInfo* st);
     static int refresh_cost(const Position& pos);
 
-    // Returns whether the change stored in this StateInfo means that
-    // a full accumulator refresh is required.
+    // Returns whether the change stored in this StateInfo means
+    // that a full accumulator refresh is required.
     static bool requires_refresh(const StateInfo* st, Color perspective);
 };
 

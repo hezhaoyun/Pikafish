@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,10 +18,10 @@
 
 #include "uci.h"
 
+#include <stdint.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <iostream>
@@ -74,15 +74,15 @@ void position(Position& pos, std::istringstream& is, StateListPtr& states) {
     pos.set(fen, &states->back(), Threads.main());
 
     // Parse the move list, if any
-    while (is >> token && (m = UCI::to_move(pos, token)) != MOVE_NONE)
+    while (is >> token && (m = UCI::to_move(pos, token)) != Move::none())
     {
         states->emplace_back();
         pos.do_move(m, states->back());
     }
 }
 
-// Prints the evaluation of the current position, consistent with
-// the UCI options set so far.
+// Prints the evaluation of the current position,
+// consistent with the UCI options set so far.
 void trace_eval(Position& pos) {
 
     StateListPtr states(new std::deque<StateInfo>(1));
@@ -120,9 +120,9 @@ void setoption(std::istringstream& is) {
 }
 
 
-// Called when the engine receives the "go" UCI command. The function
-// sets the thinking time and other parameters from the input string, then starts
-// with a search.
+// Called when the engine receives the "go" UCI command. The function sets the
+// thinking time and other parameters from the input string then stars with a search
+
 void go(Position& pos, std::istringstream& is, StateListPtr& states) {
 
     Search::LimitsType limits;
@@ -353,7 +353,7 @@ std::string UCI::value(Value v) {
 
     std::stringstream ss;
 
-    if (abs(v) < VALUE_MATE_IN_MAX_PLY)
+    if (std::abs(v) < VALUE_MATE_IN_MAX_PLY)
         ss << "cp " << UCI::to_cp(v);
     else
         ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v) / 2;
@@ -386,14 +386,14 @@ std::string UCI::square(Square s) {
 // Converts a Move to a string in coordinate notation (g1f3, a7a8).
 std::string UCI::move(Move m) {
 
-    if (m == MOVE_NONE)
+    if (m == Move::none())
         return "(none)";
 
-    if (m == MOVE_NULL)
+    if (m == Move::null())
         return "0000";
 
-    Square from = from_sq(m);
-    Square to   = to_sq(m);
+    Square from = m.from_sq();
+    Square to   = m.to_sq();
 
     std::string move = UCI::square(from) + UCI::square(to);
 
@@ -409,7 +409,7 @@ Move UCI::to_move(const Position& pos, std::string& str) {
         if (str == UCI::move(m))
             return m;
 
-    return MOVE_NONE;
+    return Move::none();
 }
 
 }  // namespace Stockfish

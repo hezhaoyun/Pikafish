@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@
 #ifndef UCI_H_INCLUDED
 #define UCI_H_INCLUDED
 
-#include <stdint.h>
 #include <cstddef>
 #include <iosfwd>
 #include <map>
@@ -37,7 +36,7 @@ namespace UCI {
 // to the UCI centipawn result used in output. This value is derived from
 // the win_rate_model() such that Stockfish outputs an advantage of
 // "0 centipawns" for a position if the engine has a 50% probability to win
-// from this position in selfplay at fishtest LTC time control.
+// from this position in self-play at fishtest LTC time control.
 const int NormalizeToPawnValue = 368;
 
 class Option;
@@ -90,8 +89,6 @@ Move        to_move(const Position& pos, std::string& str);
 }  // namespace UCI
 
 extern UCI::OptionsMap Options;
-extern uint8_t         MateThreatDepth;
-extern bool            ChineseRule;
 
 }  // namespace Stockfish
 

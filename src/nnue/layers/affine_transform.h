@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -195,7 +195,7 @@ class AffineTransform {
         if constexpr (OutputDimensions > 1)
         {
 
-    #if defined(USE_AVX512)
+    #if defined(USE_AVX512) || defined(USE_AVX512F)
             using vec_t = __m512i;
         #define vec_setzero _mm512_setzero_si512
         #define vec_set_32 _mm512_set1_epi32

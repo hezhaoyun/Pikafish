@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -55,7 +55,7 @@ alignas(CacheLineSize) static inline const
 template<const IndexType InputDimensions>
 void find_nnz(const std::int32_t* input, std::uint16_t* out, IndexType& count_out) {
     #if defined(USE_SSSE3)
-        #if defined(USE_AVX512)
+        #if defined(USE_AVX512) || defined(USE_AVX512F)
     using vec_t = __m512i;
             #define vec_nnz(a) _mm512_cmpgt_epi32_mask(a, _mm512_setzero_si512())
         #elif defined(USE_AVX2)
@@ -201,7 +201,7 @@ class AffineTransformSparseInput {
     void propagate(const InputType* input, OutputType* output) const {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
-    #if defined(USE_AVX512)
+    #if defined(USE_AVX512) || defined(USE_AVX512F)
         using invec_t  = __m512i;
         using outvec_t = __m512i;
         #define vec_set_32 _mm512_set1_epi32
@@ -236,7 +236,7 @@ class AffineTransformSparseInput {
 
         const auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
-        // Find indices of nonzero 32bit blocks
+        // Find indices of nonzero 32-bit blocks
         find_nnz<NumChunks>(input32, nnz, count);
 
         const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,10 +20,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <deque>
 #include <initializer_list>
-#include <map>
+#include <unordered_map>
 #include <memory>
 #include <utility>
 
@@ -64,10 +65,11 @@ Thread::~Thread() {
 // Reset histories, usually before a new game
 void Thread::clear() {
 
-    counterMoves.fill(MOVE_NONE);
+    counterMoves.fill(Move::none());
     mainHistory.fill(0);
     captureHistory.fill(0);
     pawnHistory.fill(0);
+    correctionHistory.fill(0);
 
     for (bool inCheck : {false, true})
         for (StatsType c : {NoCaptures, Captures})
@@ -213,9 +215,9 @@ void ThreadPool::start_thinking(Position&                 pos,
 
 Thread* ThreadPool::get_best_thread() const {
 
-    Thread*                 bestThread = threads.front();
-    std::map<Move, int64_t> votes;
-    Value                   minScore = VALUE_NONE;
+    Thread*                                           bestThread = threads.front();
+    std::unordered_map<Move, int64_t, Move::MoveHash> votes;
+    Value                                             minScore = VALUE_NONE;
 
     // Find minimum score of all threads
     for (Thread* th : threads)
@@ -230,7 +232,7 @@ Thread* ThreadPool::get_best_thread() const {
         votes[th->rootMoves[0].pv[0]] += thread_value(th);
 
     for (Thread* th : threads)
-        if (abs(bestThread->rootMoves[0].score) >= VALUE_MATE_IN_MAX_PLY)
+        if (std::abs(bestThread->rootMoves[0].score) >= VALUE_MATE_IN_MAX_PLY)
         {
             // Make sure we pick the shortest mate / stave off mate the longest
             if (th->rootMoves[0].score > bestThread->rootMoves[0].score)

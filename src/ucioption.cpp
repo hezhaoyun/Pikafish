@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,7 +16,6 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdint.h>
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -41,8 +40,6 @@ using std::string;
 namespace Stockfish {
 
 UCI::OptionsMap Options;  // Global object
-uint8_t         MateThreatDepth = 1;
-bool            ChineseRule     = false;
 
 namespace UCI {
 
@@ -51,8 +48,6 @@ static void on_clear_hash(const Option&) { Search::clear(); }
 static void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
 static void on_logger(const Option& o) { start_logger(o); }
 static void on_threads(const Option& o) { Threads.set(size_t(o)); }
-static void on_mate_threat_depth(const Option& o) { MateThreatDepth = size_t(o); }
-static void on_repetition_rule(const Option& o) { ChineseRule = o == "ChineseRule"; }
 static void on_eval_file(const Option&) { Eval::NNUE::init(); }
 
 // Our case insensitive less() function as required by UCI protocol
@@ -73,13 +68,9 @@ void init(OptionsMap& o) {
     o["Hash"] << Option(16, 1, MaxHashMB, on_hash_size);
     o["Clear Hash"] << Option(on_clear_hash);
     o["Ponder"] << Option(false);
-    o["MultiPV"] << Option(1, 1, 500);
+    o["MultiPV"] << Option(1, 1, MAX_MOVES);
     o["Move Overhead"] << Option(10, 0, 5000);
-    o["Slow Mover"] << Option(100, 10, 1000);
     o["nodestime"] << Option(0, 0, 10000);
-    o["Mate Threat Depth"] << Option(1, 0, 10, on_mate_threat_depth);
-    o["Repetition Rule"] << Option("AsianRule var AsianRule var ChineseRule", "AsianRule",
-                                   on_repetition_rule);
     o["UCI_ShowWDL"] << Option(false);
     o["EvalFile"] << Option(EvalFileDefaultName, on_eval_file);
 }
