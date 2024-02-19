@@ -169,14 +169,13 @@ void MovePicker::score() {
     {
         if constexpr (Type == CAPTURES)
             m.value =
-              (7 * int(PieceValue[pos.piece_on(m.to_sq())])
-               + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))])
-              / 16;
+              7 * int(PieceValue[pos.piece_on(m.to_sq())])
+              + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
 
         else if constexpr (Type == QUIETS)
         {
             Piece     pc   = pos.moved_piece(m);
-            PieceType pt   = type_of(pos.moved_piece(m));
+            PieceType pt   = type_of(pc);
             Square    from = m.from_sq();
             Square    to   = m.to_sq();
 
@@ -204,11 +203,9 @@ void MovePicker::score() {
             m.value -= !(threatenedPieces & from)
                        ? (pt == ROOK ? bool(to & threatenedByMinor) * 50000
                                          + bool(to & threatenedByDefender) * 10000
-                                         + bool(to & threatenedByPawn) * 20000
                           : (pt == KNIGHT || pt == CANNON) ? bool(to & threatenedByDefender) * 25000
-                                                               + bool(to & threatenedByPawn) * 10000
-                          : pt != PAWN ? bool(to & threatenedByPawn) * 15000
-                                       : 0)
+                          : pt != PAWN                     ? bool(to & threatenedByPawn) * 15000
+                                                           : 0)
                        : 0;
         }
 
@@ -275,7 +272,8 @@ top:
     case GOOD_CAPTURE :
         if (select<Next>([&]() {
                 // Move losing capture to endBadCaptures to be tried later
-                return pos.see_ge(*cur, -cur->value) ? true : (*endBadCaptures++ = *cur, false);
+                return pos.see_ge(*cur, -cur->value / 18) ? true
+                                                          : (*endBadCaptures++ = *cur, false);
             }))
             return *(cur - 1);
 
@@ -316,19 +314,11 @@ top:
                 return *cur != refutations[0] && *cur != refutations[1] && *cur != refutations[2];
             }))
         {
-            Move tmp = *(cur - 1);
-            if ((cur - 1)->value < -7500 && (cur - 1)->value > quiet_threshold(depth))
-            {
-                // Remaining quiets are bad
-                beginBadQuiets = cur;
+            if ((cur - 1)->value > -8000 || (cur - 1)->value <= quiet_threshold(depth))
+                return *(cur - 1);
 
-                // Prepare the pointers to loop over the bad captures
-                cur      = moves;
-                endMoves = endBadCaptures;
-
-                ++stage;
-            }
-            return tmp;
+            // Remaining quiets are bad
+            beginBadQuiets = cur - 1;
         }
 
         // Prepare the pointers to loop over the bad captures

@@ -25,16 +25,16 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <vector>
 
 #include "misc.h"
 #include "nnue/evaluate_nnue.h"
 #include "position.h"
-#include "thread.h"
 #include "types.h"
 #include "uci.h"
-
+#include "ucioption.h"
 
 namespace Stockfish {
 
@@ -47,45 +47,58 @@ std::string currentEvalFileName = "None";
 // The name of the NNUE network is always retrieved from the EvalFile option.
 // We search the given network in two locations: in the active working directory and
 // in the engine directory.
-void NNUE::init() {
+EvalFile NNUE::load_networks(const std::string& rootDirectory,
+                             const OptionsMap&  options,
+                             EvalFile           evalFile) {
 
-    std::string eval_file = std::string(Options["EvalFile"]);
-    if (eval_file.empty())
-        eval_file = EvalFileDefaultName;
+    std::string user_eval_file = options[evalFile.optionName];
 
-    std::vector<std::string> dirs = {"", CommandLine::binaryDirectory};
+    if (user_eval_file.empty())
+        user_eval_file = evalFile.defaultName;
+
+    std::vector<std::string> dirs = {"", rootDirectory};
 
     for (const std::string& directory : dirs)
-    {
-        std::ifstream stream(directory + eval_file, std::ios::binary);
-        std::stringstream ss = read_zipped_nnue(directory + eval_file);
-        if (NNUE::load_eval(eval_file, stream) || NNUE::load_eval(eval_file, ss))
+        if (evalFile.current != user_eval_file)
         {
-            currentEvalFileName = eval_file;
-            break;
+            std::stringstream ss          = read_zipped_nnue(directory + user_eval_file);
+            auto              description = NNUE::load_eval(ss);
+            if (!description.has_value())
+            {
+                std::ifstream stream(directory + user_eval_file, std::ios::binary);
+                description = NNUE::load_eval(stream);
+            }
+
+            if (description.has_value())
+            {
+                evalFile.current        = user_eval_file;
+                evalFile.netDescription = description.value();
+            }
         }
-    }
-  }
+
+    return evalFile;
+}
 
 // Verifies that the last net used was loaded successfully
-void NNUE::verify() {
+void NNUE::verify(const OptionsMap& options, const EvalFile& evalFile) {
 
-    std::string eval_file = std::string(Options["EvalFile"]);
-    if (eval_file.empty())
-        eval_file = EvalFileDefaultName;
+    std::string user_eval_file = options[evalFile.optionName];
 
-    if (currentEvalFileName != eval_file)
+    if (user_eval_file.empty())
+        user_eval_file = evalFile.defaultName;
+
+    if (evalFile.current != user_eval_file)
     {
 
         std::string msg1 =
           "Network evaluation parameters compatible with the engine must be available.";
-        std::string msg2 = "The network file " + eval_file + " was not loaded successfully.";
+        std::string msg2 = "The network file " + user_eval_file + " was not loaded successfully.";
         std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
                            "including the directory name, to the network file.";
         std::string msg4 =
           "The default net can be downloaded from: "
           "https://github.com/official-pikafish/Networks/releases/download/master-net/"
-          + std::string(EvalFileDefaultName);
+          + evalFile.defaultName;
         std::string msg5 = "The engine will be terminated now.";
 
         sync_cout << "info string ERROR: " << msg1 << sync_endl;
@@ -97,7 +110,7 @@ void NNUE::verify() {
         exit(EXIT_FAILURE);
     }
 
-    sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
+    sync_cout << "info string NNUE evaluation using " << user_eval_file << " enabled" << sync_endl;
 }
 }
 
@@ -112,9 +125,9 @@ int Eval::simple_eval(const Position& pos, Color c) {
          + (pos.major_material(c) - pos.major_material(~c));
 }
 
-// Evaluate is the evaluator for the outer world. It returns a static
-// evaluation of the position from the point of view of the side to move.
-Value Eval::evaluate(const Position& pos) {
+// Evaluate is the evaluator for the outer world. It returns a static evaluation
+// of the position from the point of view of the side to move.
+Value Eval::evaluate(const Position& pos, int optimism) {
 
     assert(!pos.checkers());
 
@@ -126,20 +139,18 @@ Value Eval::evaluate(const Position& pos) {
     int   nnueComplexity;
     Value nnue = NNUE::evaluate(pos, true, &nnueComplexity);
 
-    int optimism = pos.this_thread()->optimism[stm];
-
     // Blend optimism and eval with nnue complexity and material imbalance
-    optimism += optimism * (nnueComplexity + std::abs(simpleEval - nnue)) / 708;
-    nnue -= nnue * (nnueComplexity + std::abs(simpleEval - nnue)) / 32858;
+    optimism += optimism * (nnueComplexity + std::abs(simpleEval - nnue)) / 781;
+    nnue -= nnue * (nnueComplexity + std::abs(simpleEval - nnue)) / 30087;
 
-    int mm = pos.major_material() / 42;
-    v      = (nnue * (545 + mm) + optimism * (128 + mm)) / 1312;
+    int mm = pos.major_material() / 41;
+    v      = (nnue * (568 + mm) + optimism * (138 + mm)) / 1434;
 
     // Damp down the evaluation linearly when shuffling
-    v = v * (263 - shuffling) / 192;
+    v = v * (293 - shuffling) / 194;
 
     // Guarantee evaluation does not hit the mate range
-    v = std::clamp(int(v), VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
+    v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
 
     return v;
 }
@@ -156,22 +167,16 @@ std::string Eval::trace(Position& pos) {
     std::stringstream ss;
     ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
 
-    Value v;
-
-    // Reset any global variable used in eval
-    pos.this_thread()->bestValue       = VALUE_ZERO;
-    pos.this_thread()->optimism[WHITE] = VALUE_ZERO;
-    pos.this_thread()->optimism[BLACK] = VALUE_ZERO;
-
     ss << '\n' << NNUE::trace(pos) << '\n';
 
     ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
+    Value v;
     v = NNUE::evaluate(pos);
     v = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCI::to_cp(v) << " (white side)\n";
 
-    v = evaluate(pos);
+    v = evaluate(pos, VALUE_ZERO);
     v = pos.side_to_move() == WHITE ? v : -v;
     ss << "Final evaluation       " << 0.01 * UCI::to_cp(v) << " (white side)";
     ss << " [with scaled NNUE, ...]";

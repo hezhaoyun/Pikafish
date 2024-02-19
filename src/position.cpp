@@ -19,7 +19,6 @@
 #include "position.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cassert>
 #include <cctype>
 #include <cstddef>
@@ -33,7 +32,6 @@
 #include "bitboard.h"
 #include "misc.h"
 #include "movegen.h"
-#include "thread.h"
 #include "tt.h"
 #include "uci.h"
 
@@ -97,7 +95,7 @@ void Position::init() {
 // Initializes the position object with the given FEN string.
 // This function is not very robust - make sure that input FENs are correct,
 // this is assumed to be the responsibility of the GUI.
-Position& Position::set(const string& fenStr, StateInfo* si, Thread* th) {
+Position& Position::set(const string& fenStr, StateInfo* si) {
     /*
    A FEN string defines a particular position using only the ASCII character set.
 
@@ -167,7 +165,6 @@ Position& Position::set(const string& fenStr, StateInfo* si, Thread* th) {
     // handle also common incorrect FEN with fullmove = 0.
     gamePly = std::max(2 * (gamePly - 1), 0) + (sideToMove == BLACK);
 
-    thisThread = th;
     set_state();
 
     assert(pos_is_ok());
@@ -324,7 +321,7 @@ Bitboard Position::checkers_to(Color c, Square s, Bitboard occupied) const {
 // Tests whether a pseudo-legal move is legal
 bool Position::legal(Move m) const {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
 
     Color    us       = sideToMove;
     Square   from     = m.from_sq();
@@ -381,7 +378,7 @@ bool Position::pseudo_legal(const Move m) const {
 // Tests whether a pseudo-legal move gives a check
 bool Position::gives_check(Move m) const {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
     assert(color_of(moved_piece(m)) == sideToMove);
 
     Square from = m.from_sq();
@@ -414,13 +411,12 @@ bool Position::gives_check(Move m) const {
 // moves should be filtered out before this function is called.
 void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
     assert(&newSt != st);
 
     // Update the bloom filter
     ++filter[st->key];
 
-    thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
     Key k = st->key ^ Zobrist::side;
 
     // Copy some fields of the old state to our new StateInfo object except the
@@ -456,8 +452,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
     Piece  pc       = piece_on(from);
     Piece  captured = piece_on(to);
 
-    dp.requires_refresh[WHITE] = pc == W_KING;
-    dp.requires_refresh[BLACK] = pc == B_KING;
+    dp.requires_refresh[us]   = pc == make_piece(us, KING);
+    dp.requires_refresh[them] = false;
 
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == them);
@@ -473,6 +469,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
             st->pawnKey ^= Zobrist::psq[captured][capsq];
         else if (type_of(captured) & 1)
             st->majorMaterial[them] -= PieceValue[captured];
+        else
+            dp.requires_refresh[them] = true;
 
         dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
         dp.piece[1]  = captured;
@@ -481,9 +479,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
         // Update board and piece lists
         remove_piece(capsq);
-
-        dp.requires_refresh[WHITE] |= captured == W_ADVISOR || captured == W_BISHOP;
-        dp.requires_refresh[BLACK] |= captured == B_ADVISOR || captured == B_BISHOP;
 
         // Update hash key
         k ^= Zobrist::psq[captured][capsq];
@@ -528,7 +523,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 // be restored to exactly the same state as before the move was made.
 void Position::undo_move(Move m) {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
 
     sideToMove = ~sideToMove;
 
@@ -560,7 +555,7 @@ void Position::undo_move(Move m) {
 
 // Used to do a "null move": it flips
 // the side to move without executing any move on the board.
-void Position::do_null_move(StateInfo& newSt) {
+void Position::do_null_move(StateInfo& newSt, TranspositionTable& tt) {
 
     assert(!checkers());
     assert(&newSt != st);
@@ -581,7 +576,7 @@ void Position::do_null_move(StateInfo& newSt) {
 
     st->key ^= Zobrist::side;
     ++st->rule60;
-    prefetch(TT.first_entry(key()));
+    prefetch(tt.first_entry(key()));
 
     st->pliesFromNull = 0;
 
@@ -630,7 +625,7 @@ Key Position::key_after(Move m) const {
 // algorithm similar to alpha-beta pruning with a null window.
 bool Position::see_ge(Move m, int threshold) const {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
 
     Square from = m.from_sq(), to = m.to_sq();
 
@@ -797,7 +792,7 @@ void Position::light_undo_move(Move m, Piece captured, int id) {
 // Tests whether a pseudo-legal move is chase legal
 bool Position::chase_legal(Move m) const {
 
-    assert(is_ok(m));
+    assert(m.is_ok());
 
     Color    us       = sideToMove;
     Square   from     = m.from_sq();
@@ -839,23 +834,6 @@ uint16_t Position::chased(Color c) {
             attacks &= (pieces(~sideToMove) ^ pieces(~sideToMove, KING, PAWN))
                      | (pieces(~sideToMove, PAWN) & HalfBB[sideToMove]);
 
-        // Skip if no attacks
-        if (!attacks)
-            continue;
-
-        // Knight and Cannon attacks against protected rooks
-        Bitboard candidates = 0;
-        if (attackerType == KNIGHT || attackerType == CANNON)
-            candidates = attacks & pieces(~sideToMove, ROOK);
-        attacks ^= candidates;
-        while (candidates)
-        {
-            Square to = pop_lsb(candidates);
-            if (chase_legal(Move(from, to)))
-                chase |= (1 << idBoard[to]);
-        }
-
-        // Attacks against potentially unprotected pieces
         while (attacks)
         {
             Square to = pop_lsb(attacks);
@@ -863,33 +841,41 @@ uint16_t Position::chased(Color c) {
 
             if (chase_legal(m))
             {
-                bool trueChase             = true;
-                const auto& [captured, id] = light_do_move(m);
-                Bitboard recaptures        = attackers_to(to) & pieces(sideToMove);
-                while (recaptures)
+                // Knight and Cannon attacks against protected rooks
+                if ((attackerType == KNIGHT || attackerType == CANNON)
+                    && type_of(piece_on(to)) == ROOK)
+                    chase |= (1 << idBoard[to]);
+                // Attacks against potentially unprotected pieces
+                else
                 {
-                    Square s = pop_lsb(recaptures);
-                    if (chase_legal(Move(s, to)))
+                    bool trueChase             = true;
+                    const auto& [captured, id] = light_do_move(m);
+                    Bitboard recaptures        = attackers_to(to) & pieces(sideToMove);
+                    while (recaptures)
                     {
-                        trueChase = false;
-                        break;
+                        Square s = pop_lsb(recaptures);
+                        if (chase_legal(Move(s, to)))
+                        {
+                            trueChase = false;
+                            break;
+                        }
                     }
-                }
-                light_undo_move(m, captured, id);
+                    light_undo_move(m, captured, id);
 
-                if (trueChase)
-                {
-                    // Exclude mutual/symmetric attacks except pins
-                    if (attackerType == type_of(piece_on(to)))
+                    if (trueChase)
                     {
-                        sideToMove = ~sideToMove;
-                        if ((attackerType == KNIGHT && ((between_bb(from, to) ^ to) & pieces()))
-                            || !chase_legal(Move(to, from)))
+                        // Exclude mutual/symmetric attacks except pins
+                        if (attackerType == type_of(piece_on(to)))
+                        {
+                            sideToMove = ~sideToMove;
+                            if ((attackerType == KNIGHT && ((between_bb(from, to) ^ to) & pieces()))
+                                || !chase_legal(Move(to, from)))
+                                chase |= (1 << idBoard[to]);
+                            sideToMove = ~sideToMove;
+                        }
+                        else
                             chase |= (1 << idBoard[to]);
-                        sideToMove = ~sideToMove;
                     }
-                    else
-                        chase |= (1 << idBoard[to]);
                 }
             }
         }
@@ -982,13 +968,6 @@ Value Position::detect_chases(int d, int ply) {
 // perpetual check repetition or perpetual chase repetition that allows a player to claim a game result.
 bool Position::rule_judge(Value& result, int ply) const {
 
-    // Draw by insufficient material
-    if (!major_material() && count<PAWN>() == 0)
-    {
-        result = VALUE_DRAW;
-        return true;
-    }
-
     // Restore rule 60 by adding back the checks
     int end = std::min(st->rule60 + std::max(0, st->check10[WHITE] - 10)
                          + std::max(0, st->check10[BLACK] - 10),
@@ -1037,6 +1016,43 @@ bool Position::rule_judge(Value& result, int ply) const {
         }
     }
 
+    // Draw by insufficient material
+    if ([&] {
+            if (count<PAWN>() == 0)
+            {
+                // No attacking pieces left
+                if (!major_material())
+                    return true;
+
+                // Only one cannon left on the board
+                if (major_material() == CannonValue)
+                {
+                    // No advisors left on the board
+                    if (count<ADVISOR>() == 0)
+                        return true;
+
+                    // The side not holding the cannon can possess one advisor
+                    // The side holding the cannon should only have cannon
+                    if ((count<ALL_PIECES>(WHITE) == 2 && count<CANNON>(WHITE) == 1
+                         && count<ADVISOR>(BLACK) == 1)
+                        || (count<ALL_PIECES>(BLACK) == 2 && count<CANNON>(BLACK) == 1
+                            && count<ADVISOR>(WHITE) == 1))
+                        return true;
+                }
+
+                // Two cannons left on the board, one for each side, but no other pieces left on the board
+                if (count<ALL_PIECES>() == 4 && count<CANNON>(WHITE) == 1
+                    && count<CANNON>(BLACK) == 1)
+                    return true;
+            }
+
+            return false;
+        }())
+    {
+        result = VALUE_DRAW;
+        return true;
+    }
+
     // 60 move rule
     if (st->rule60 >= 120)
     {
@@ -1076,7 +1092,7 @@ void Position::flip() {
     std::getline(ss, token);  // Half and full moves
     f += token;
 
-    set(f, st, this_thread());
+    set(f, st);
 
     assert(pos_is_ok());
 }
