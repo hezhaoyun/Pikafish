@@ -64,7 +64,7 @@ HEADERS = benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.h magics.h
            nnue/layers/sqr_clipped_relu.h nnue/nnue_accumulator.h nnue/nnue_architecture.h \
            nnue/nnue_common.h nnue/nnue_feature_transformer.h position.h \
            search.h thread.h thread_win32_osx.h timeman.h \
-           tt.h tune.h types.h uci.h \
+           tt.h tune.h types.h uci.h ucioption.h perft.h \
            external/zip.h external/miniz.h
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
@@ -97,6 +97,7 @@ VPATH = external:nnue:nnue/features
 # sse41 = yes/no      --- -msse4.1           --- Use Intel Streaming SIMD Extensions 4.1
 # avx2 = yes/no       --- -mavx2             --- Use Intel Advanced Vector Extensions 2
 # avxvnni = yes/no    --- -mavxvnni          --- Use Intel Vector Neural Network Instructions AVX
+# avx512f = yes/no    --- -mavx512f          --- Use Intel Advanced Vector Extensions 512 Foundation Only
 # avx512 = yes/no     --- -mavx512bw         --- Use Intel Advanced Vector Extensions 512
 # vnni256 = yes/no    --- -mavx256vnni       --- Use Intel Vector Neural Network Instructions 512 with 256bit operands
 # vnni512 = yes/no    --- -mavx512vnni       --- Use Intel Vector Neural Network Instructions 512
@@ -124,10 +125,10 @@ endif
 # explicitly check for the list of supported architectures (as listed with make help),
 # the user can override with `make ARCH=x86-32-vnni256 SUPPORTED_ARCH=true`
 ifeq ($(ARCH), $(filter $(ARCH), \
-                 x86-64-vnni512 x86-64-vnni256 x86-64-avx512 x86-64-avxvnni x86-64-bmi2 \
+                 x86-64-vnni512 x86-64-vnni256 x86-64-avx512 x86-64-avx512f x86-64-avxvnni x86-64-bmi2 \
                  x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-32 e2k \
-                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64))
+                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64 loongarch64))
    SUPPORTED_ARCH=true
 else
    SUPPORTED_ARCH=false
@@ -147,6 +148,7 @@ ssse3 = no
 sse41 = no
 avx2 = no
 avxvnni = no
+avx512f = no
 avx512 = no
 vnni256 = no
 vnni512 = no
@@ -248,7 +250,7 @@ ifeq ($(findstring -bmi2,$(ARCH)),-bmi2)
 	pext = yes
 endif
 
-ifeq ($(findstring -avx512,$(ARCH)),-avx512)
+ifeq ($(findstring -avx512f,$(ARCH)),-avx512f)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -256,7 +258,18 @@ ifeq ($(findstring -avx512,$(ARCH)),-avx512)
 	sse41 = yes
 	avx2 = yes
 	pext = yes
-	avx512 = yes
+	avx512f = yes
+else
+	ifeq ($(findstring -avx512,$(ARCH)),-avx512)
+		popcnt = yes
+		sse = yes
+		sse2 = yes
+		ssse3 = yes
+		sse41 = yes
+		avx2 = yes
+		pext = yes
+		avx512 = yes
+	endif
 endif
 
 ifeq ($(findstring -vnni256,$(ARCH)),-vnni256)
@@ -371,6 +384,10 @@ endif
 ifeq ($(ARCH),riscv64)
 	arch = riscv64
 endif
+
+ifeq ($(ARCH),loongarch64)
+	arch = loongarch64
+endif
 endif
 
 
@@ -407,6 +424,8 @@ ifeq ($(COMP),gcc)
 		ifeq ($(ARCH),riscv64)
 			CXXFLAGS += -latomic
 		endif
+	else ifeq ($(ARCH),loongarch64)
+		CXXFLAGS += -latomic
 	else
 		CXXFLAGS += -m$(bits)
 		LDFLAGS += -m$(bits)
@@ -477,6 +496,8 @@ ifeq ($(COMP),clang)
 		ifeq ($(ARCH),riscv64)
 			CXXFLAGS += -latomic
 		endif
+	else ifeq ($(ARCH),loongarch64)
+		CXXFLAGS += -latomic
 	else
 		CXXFLAGS += -m$(bits)
 		LDFLAGS += -m$(bits)
@@ -512,6 +533,14 @@ ifeq ($(COMP),ndk)
 		CXX=aarch64-linux-android21-clang++
 		ifneq ($(shell which aarch64-linux-android-strip 2>/dev/null),)
 			STRIP=aarch64-linux-android-strip
+		else
+			STRIP=llvm-strip
+		endif
+	endif
+	ifeq ($(arch),x86_64)
+		CXX=x86_64-linux-android21-clang++
+		ifneq ($(shell which x86_64-linux-android-strip 2>/dev/null),)
+			STRIP=x86_64-linux-android-strip
 		else
 			STRIP=llvm-strip
 		endif
@@ -648,10 +677,17 @@ ifeq ($(avxvnni),yes)
 	endif
 endif
 
-ifeq ($(avx512),yes)
-	CXXFLAGS += -DUSE_AVX512
+ifeq ($(avx512f),yes)
+	CXXFLAGS += -DUSE_AVX512F
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mavx512f -mavx512bw
+		CXXFLAGS += -mavx512f
+	endif
+else
+	ifeq ($(avx512),yes)
+		CXXFLAGS += -DUSE_AVX512
+		ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
+			CXXFLAGS += -mavx512f -mavx512bw
+		endif
 	endif
 endif
 
@@ -803,6 +839,7 @@ help:
 	@echo "x86-64-vnni512          > x86 64-bit with vnni 512bit support"
 	@echo "x86-64-vnni256          > x86 64-bit with vnni 512bit support, limit operands to 256bit wide"
 	@echo "x86-64-avx512           > x86 64-bit with avx512 support"
+	@echo "x86-64-avx512f          > x86 64-bit with avx512f only support"
 	@echo "x86-64-avxvnni          > x86 64-bit with vnni 256bit support"
 	@echo "x86-64-bmi2             > x86 64-bit with bmi2 support"
 	@echo "x86-64-avx2             > x86 64-bit with avx2 support"
@@ -825,6 +862,7 @@ help:
 	@echo "general-64              > unspecified 64-bit"
 	@echo "general-32              > unspecified 32-bit"
 	@echo "riscv64                 > RISC-V 64-bit"
+	@echo "loongarch64             > LoongArch 64-bit"
 	@echo ""
 	@echo "Supported compilers:"
 	@echo ""
@@ -940,6 +978,7 @@ config-sanity: net
 	@echo "sse41: '$(sse41)'"
 	@echo "avx2: '$(avx2)'"
 	@echo "avxvnni: '$(avxvnni)'"
+	@echo "avx512f: '$(avx512f)'"
 	@echo "avx512: '$(avx512)'"
 	@echo "vnni256: '$(vnni256)'"
 	@echo "vnni512: '$(vnni512)'"
@@ -960,7 +999,7 @@ config-sanity: net
 	@test "$(SUPPORTED_ARCH)" = "true"
 	@test "$(arch)" = "any" || test "$(arch)" = "x86_64" || test "$(arch)" = "i386" || \
 	 test "$(arch)" = "ppc64" || test "$(arch)" = "ppc" || test "$(arch)" = "e2k" || \
-	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "arm64" || test "$(arch)" = "riscv64"
+	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "arm64" || test "$(arch)" = "riscv64" || test "$(arch)" = "loongarch64"
 	@test "$(bits)" = "32" || test "$(bits)" = "64"
 	@test "$(prefetch)" = "yes" || test "$(prefetch)" = "no"
 	@test "$(popcnt)" = "yes" || test "$(popcnt)" = "no"
@@ -971,6 +1010,7 @@ config-sanity: net
 	@test "$(ssse3)" = "yes" || test "$(ssse3)" = "no"
 	@test "$(sse41)" = "yes" || test "$(sse41)" = "no"
 	@test "$(avx2)" = "yes" || test "$(avx2)" = "no"
+	@test "$(avx512f)" = "yes" || test "$(avx512f)" = "no"
 	@test "$(avx512)" = "yes" || test "$(avx512)" = "no"
 	@test "$(vnni256)" = "yes" || test "$(vnni256)" = "no"
 	@test "$(vnni512)" = "yes" || test "$(vnni512)" = "no"

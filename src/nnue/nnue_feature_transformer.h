@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -32,7 +32,6 @@
 #include "../types.h"
 #include "nnue_accumulator.h"
 #include "nnue_architecture.h"
-#include "../position.h"
 #include "nnue_common.h"
 
 namespace Stockfish::Eval::NNUE {
@@ -49,7 +48,61 @@ using PSQTWeightType = std::int32_t;
 static_assert(PSQTBuckets % 8 == 0,
               "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
 
-#ifdef USE_AVX512
+#ifdef USE_AVX512F
+using vec_t      = __m512i;
+using psqt_vec_t = __m256i;
+    #define vec_load(a) _mm512_load_si512(a)
+    #define vec_store(a, b) _mm512_store_si512(a, b)
+    #define vec_add_16(a, b) \
+        __builtin_shufflevector(_mm256_add_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), \
+                                                 __builtin_shufflevector(b, b, 0, 1, 2, 3)), \
+                                _mm256_add_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), \
+                                                 __builtin_shufflevector(b, b, 4, 5, 6, 7)), \
+                                0, 1, 2, 3, 4, 5, 6, 7)
+    #define vec_sub_16(a, b) \
+        __builtin_shufflevector(_mm256_sub_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), \
+                                                 __builtin_shufflevector(b, b, 0, 1, 2, 3)), \
+                                _mm256_sub_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), \
+                                                 __builtin_shufflevector(b, b, 4, 5, 6, 7)), \
+                                0, 1, 2, 3, 4, 5, 6, 7)
+    #define vec_mul_16(a, b) \
+        __builtin_shufflevector(_mm256_mullo_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), \
+                                                   __builtin_shufflevector(b, b, 0, 1, 2, 3)), \
+                                _mm256_mullo_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), \
+                                                   __builtin_shufflevector(b, b, 4, 5, 6, 7)), \
+                                0, 1, 2, 3, 4, 5, 6, 7)
+    #define vec_zero() _mm512_setzero_epi32()
+    #define vec_set_16(a) _mm512_set1_epi16(a)
+    #define vec_max_16(a, b) \
+        __builtin_shufflevector(_mm256_max_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), \
+                                                 __builtin_shufflevector(b, b, 0, 1, 2, 3)), \
+                                _mm256_max_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), \
+                                                 __builtin_shufflevector(b, b, 4, 5, 6, 7)), \
+                                0, 1, 2, 3, 4, 5, 6, 7)
+    #define vec_min_16(a, b) \
+        __builtin_shufflevector(_mm256_min_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), \
+                                                 __builtin_shufflevector(b, b, 0, 1, 2, 3)), \
+                                _mm256_min_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), \
+                                                 __builtin_shufflevector(b, b, 4, 5, 6, 7)), \
+                                0, 1, 2, 3, 4, 5, 6, 7)
+inline vec_t vec_msb_pack_16(vec_t a, vec_t b) {
+    vec_t compacted = __builtin_shufflevector(
+      _mm256_packs_epi16(_mm256_srli_epi16(__builtin_shufflevector(a, a, 0, 1, 2, 3), 7),
+                         _mm256_srli_epi16(__builtin_shufflevector(b, b, 0, 1, 2, 3), 7)),
+      _mm256_packs_epi16(_mm256_srli_epi16(__builtin_shufflevector(a, a, 4, 5, 6, 7), 7),
+                         _mm256_srli_epi16(__builtin_shufflevector(b, b, 4, 5, 6, 7), 7)),
+      0, 1, 2, 3, 4, 5, 6, 7);
+    return _mm512_permutexvar_epi64(_mm512_setr_epi64(0, 2, 4, 6, 1, 3, 5, 7), compacted);
+}
+    #define vec_load_psqt(a) _mm256_load_si256(a)
+    #define vec_store_psqt(a, b) _mm256_store_si256(a, b)
+    #define vec_add_psqt_32(a, b) _mm256_add_epi32(a, b)
+    #define vec_sub_psqt_32(a, b) _mm256_sub_epi32(a, b)
+    #define vec_zero_psqt() _mm256_setzero_si256()
+    #define NumRegistersSIMD 16
+    #define MaxChunkSize 64
+
+#elif USE_AVX512
 using vec_t      = __m512i;
 using psqt_vec_t = __m256i;
     #define vec_load(a) _mm512_load_si512(a)
@@ -280,7 +333,7 @@ class FeatureTransformer {
               reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
             vec_t* out = reinterpret_cast<vec_t*>(output + offset);
 
-            for (IndexType j = 0; j < NumOutputChunks; j += 1)
+            for (IndexType j = 0; j < NumOutputChunks; ++j)
             {
                 const vec_t sum0a = vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero);
                 const vec_t sum0b = vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero);
@@ -368,14 +421,14 @@ class FeatureTransformer {
 
         // The size must be enough to contain the largest possible update.
         // That might depend on the feature set and generally relies on the
-        // feature set's update cost calculation to be correct and never
-        // allow updates with more added/removed features than MaxActiveDimensions.
+        // feature set's update cost calculation to be correct and never allow
+        // updates with more added/removed features than MaxActiveDimensions.
         FeatureSet::IndexList removed[N - 1], added[N - 1];
 
         {
             int i =
               N
-              - 2;  // last potential state to update. Skip last element because it must be nullptr.
+              - 2;  // Last potential state to update. Skip last element because it must be nullptr.
             while (states_to_update[i] == nullptr)
                 --i;
 
@@ -677,9 +730,7 @@ class FeatureTransformer {
             update_accumulator_incremental<Perspective, 2>(pos, oldest_st, states_to_update);
         }
         else
-        {
             update_accumulator_refresh<Perspective>(pos);
-        }
     }
 
     template<Color Perspective>

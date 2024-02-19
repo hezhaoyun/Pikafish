@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -198,7 +198,6 @@ inline Bitboard pawn_attacks_to_bb(Color c, Square s) {
 inline Bitboard line_bb(Square s1, Square s2) {
 
     assert(is_ok(s1) && is_ok(s2));
-
     return LineBB[s1][s2];
 }
 
@@ -213,7 +212,6 @@ inline Bitboard line_bb(Square s1, Square s2) {
 inline Bitboard between_bb(Square s1, Square s2) {
 
     assert(is_ok(s1) && is_ok(s2));
-
     return BetweenBB[s1][s2];
 }
 
@@ -254,7 +252,6 @@ template<PieceType Pt>
 inline Bitboard attacks_bb(Square s) {
 
     assert((Pt != PAWN) && (is_ok(s)));
-
     return PseudoAttacks[Pt][s];
 }
 
@@ -289,7 +286,7 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 // Sliding piece attacks do not continue passed an occupied square.
 inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
 
-    assert((pt != PAWN) && (is_ok(s)));
+    assert((pt != PAWN) && (pt != KNIGHT_TO) && (is_ok(s)));
 
     switch (pt)
     {
