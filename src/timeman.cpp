@@ -84,17 +84,23 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Maximum move horizon of 60 moves
     int mtg = limits.movestogo ? std::min(limits.movestogo, 60) : 60;
 
+    // if less than one second, gradually reduce mtg
+    if (limits.time[us] < 1000 && (double(mtg) / limits.time[us] > 0.05))
+    {
+        mtg = limits.time[us] * 0.05;
+    }
+
     // Make sure timeLeft is > 0 since we may use it as a divisor
     TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
                                                   - moveOverhead * (2 + mtg));
 
     // x basetime (+ z increment)
-    // If there is a healthy increment, timeLeft can exceed actual available
-    // game time for the current move, so also cap to 20% of available game time.
+    // If there is a healthy increment, timeLeft can exceed the actual available
+    // game time for the current move, so also cap to a percentage of available game time.
     if (limits.movestogo == 0)
     {
         // Use extra time with larger increments
-        double optExtra = std::clamp(0.9 + 14.2 * limits.inc[us] / limits.time[us], 1.0, 1.00);
+        double optExtra = limits.inc[us] < 500 ? 1.0 : 1.10;
 
         // Calculate time constants based on current time left.
         double optConstant =
