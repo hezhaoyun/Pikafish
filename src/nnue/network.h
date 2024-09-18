@@ -18,35 +18,46 @@
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
-#include <utility>
+#include <tuple>
 
-#include "../misc.h"
-#include "../position.h"
+#include "../memory.h"
 #include "../types.h"
+#include "nnue_accumulator.h"
 #include "nnue_architecture.h"
 #include "nnue_feature_transformer.h"
 #include "nnue_misc.h"
 
-namespace Stockfish::Eval::NNUE {
+namespace Stockfish {
+
+class Position;
+
+namespace Eval::NNUE {
+
+using NetworkOutput = std::tuple<Value, Value>;
 
 class Network {
    public:
     Network(EvalFile file) :
         evalFile(file) {}
 
+    Network(const Network& other);
+    Network(Network&& other) = default;
+
+    Network& operator=(const Network& other);
+    Network& operator=(Network&& other) = default;
+
     void load(const std::string& rootDirectory, std::string evalfilePath);
     bool save(const std::optional<std::string>& filename) const;
 
+    NetworkOutput evaluate(const Position& pos, AccumulatorCaches::Cache* cache) const;
 
-    Value evaluate(const Position& pos, bool adjusted = false, int* complexity = nullptr) const;
-
-
-    void hint_common_access(const Position& pos) const;
+    void hint_common_access(const Position& pos, AccumulatorCaches::Cache* cache) const;
 
     void          verify(std::string evalfilePath) const;
-    NnueEvalTrace trace_evaluate(const Position& pos) const;
+    NnueEvalTrace trace_evaluate(const Position& pos, AccumulatorCaches::Cache* cache) const;
 
    private:
     void load_user_net(const std::string&, const std::string&);
@@ -66,15 +77,18 @@ class Network {
     LargePagePtr<FeatureTransformer> featureTransformer;
 
     // Evaluation function
-    AlignedPtr<NetworkArchitecture> network[LayerStacks];
+    AlignedPtr<NetworkArchitecture[]> network;
 
     EvalFile evalFile;
 
     // Hash value of evaluation function structure
     static constexpr std::uint32_t hash =
       FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
+
+    friend struct AccumulatorCaches::Cache;
 };
 
+}  // namespace Stockfish::Eval::NNUE
 }  // namespace Stockfish
 
 #endif

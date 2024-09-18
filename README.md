@@ -100,11 +100,11 @@ descriptions.
 
 ```
 cd src
-make -j build ARCH=x86-64-modern
+make -j profile-build
 ```
 
 Detailed compilation instructions for all platforms can be found in our
-[documentation][wiki-compile-link].
+[documentation][wiki-compile-link]. Our wiki also has information about
 the [UCI commands][wiki-uci-link] supported by Pikafish.
 
 ## Terms of use
@@ -147,7 +147,7 @@ also be made available under GPL v3.
 [release-badge]:			https://img.shields.io/github/v/release/official-pikafish/Pikafish?style=for-the-badge&label=official%20release
 [release-link]:			https://github.com/official-pikafish/Pikafish/releases/latest
 [rulebook-badge]:		https://img.shields.io/badge/computer%20rule-20B2AA?style=for-the-badge&logo=mdbook
-[rulebook-link]:			https://pikafish.org/rule.pdf
+[rulebook-link]:			https://pikafish.org/rule.html
 [src-link]:				https://github.com/official-pikafish/Pikafish/tree/master/src
 [stockfish-link]:			https://github.com/official-stockfish/Stockfish
 [uci-link]:				https://backscattering.de/chess/uci/
@@ -156,6 +156,6 @@ also be made available under GPL v3.
 [website-blog-link]:  https://pikafish.org/
 [wiki-link]:          https://github.com/official-pikafish/Pikafish/wiki
 [wiki-compile-link]:  https://github.com/official-pikafish/Pikafish/wiki/Compiling-from-source
-[wiki-commands-link]: https://github.com/official-pikafish/Pikafish/wiki/UCI-&-Commands
+[wiki-uci-link]:      https://github.com/official-pikafish/Pikafish/wiki/UCI-&-Commands
 [wiki-usage-link]:    https://github.com/official-pikafish/Pikafish/wiki/Download-and-usage
 [worker-link]:			https://github.com/xyztnecniV/yolo

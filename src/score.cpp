@@ -16,29 +16,28 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <iostream>
-#include <string>
+#include "score.h"
 
-#include "bitboard.h"
-#include "misc.h"
-#include "position.h"
+#include <cassert>
+#include <cmath>
+#include <cstdlib>
+
 #include "uci.h"
-#include "tune.h"
 
-using namespace Stockfish;
+namespace Stockfish {
 
-int engineMain(int argc, char* argv[]) {
+Score::Score(Value v, const Position& pos) {
+    assert(-VALUE_INFINITE < v && v < VALUE_INFINITE);
 
-    std::cout << engine_info() << std::endl;
+    if (std::abs(v) < VALUE_MATE_IN_MAX_PLY)
+    {
+        score = InternalUnits{UCIEngine::to_cp(v, pos)};
+    }
+    else
+    {
+        auto distance = VALUE_MATE - std::abs(v);
+        score         = (v > 0) ? Mate{distance} : Mate{-distance};
+    }
+}
 
-    Bitboards::init();
-    Position::init();
-
-    UCIEngine uci(argc, argv);
-
-    Tune::init(uci.engine_options());
-
-    uci.loop();
-
-    return 0;
 }

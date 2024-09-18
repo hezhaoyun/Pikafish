@@ -23,7 +23,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
-#include <iostream>
+#include <memory>
 #include <sstream>
 
 #include "nnue/network.h"
@@ -31,42 +31,35 @@
 #include "position.h"
 #include "types.h"
 #include "uci.h"
+#include "nnue/nnue_accumulator.h"
 
 namespace Stockfish {
 
-// Returns a static, purely materialistic evaluation of the position from
-// the point of view of the given color. It can be divided by PawnValue to get
-// an approximation of the material advantage on the board in terms of pawns.
-int Eval::simple_eval(const Position& pos, Color c) {
-    return PawnValue * (pos.count<PAWN>(c) - pos.count<PAWN>(~c))
-         + AdvisorValue * (pos.count<ADVISOR>(c) - pos.count<ADVISOR>(~c))
-         + BishopValue * (pos.count<BISHOP>(c) - pos.count<BISHOP>(~c))
-         + (pos.major_material(c) - pos.major_material(~c));
-}
-
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
-Value Eval::evaluate(const Eval::NNUE::Network& network, const Position& pos, int optimism) {
+Value Eval::evaluate(const Eval::NNUE::Network& network,
+                     const Position&            pos,
+                     NNUE::AccumulatorCaches&   caches,
+                     int                        optimism) {
 
     assert(!pos.checkers());
 
-    int   v;
-    Color stm        = pos.side_to_move();
-    int   shuffling  = pos.rule60_count();
-    int   simpleEval = simple_eval(pos, stm);
+    auto [psqt, positional] = network.evaluate(pos, &caches.cache);
+    Value nnue              = (1563 * psqt + 1633 * positional) / 1183;
+    int   nnueComplexity    = std::abs(psqt - positional);
 
-    int   nnueComplexity;
-    Value nnue = network.evaluate(pos, true, &nnueComplexity);
+    // Blend optimism and eval with nnue complexity
+    optimism += optimism * nnueComplexity / 550;
+    nnue -= nnue * nnueComplexity / 10129;
 
-    // Blend optimism and eval with nnue complexity and material imbalance
-    optimism += optimism * (nnueComplexity + std::abs(simpleEval - nnue)) / 781;
-    nnue -= nnue * (nnueComplexity + std::abs(simpleEval - nnue)) / 30087;
+    int mm = pos.major_material() / 39;
+    int v  = (nnue * (430 + mm) + optimism * (101 + mm)) / 575;
 
-    int mm = pos.major_material() / 41;
-    v      = (nnue * (568 + mm) + optimism * (138 + mm)) / 1434;
+    // Evaluation grain (to get more alpha-beta cuts) with randomization (for robustness)
+    v = (v / 16) * 16 - 1 + (pos.key() & 0x2);
 
     // Damp down the evaluation linearly when shuffling
-    v = v * (293 - shuffling) / 194;
+    v -= (v * pos.rule60_count()) / 244;
 
     // Guarantee evaluation does not hit the mate range
     v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
@@ -83,20 +76,23 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     if (pos.checkers())
         return "Final evaluation: none (in check)";
 
+    auto caches = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
+
     std::stringstream ss;
     ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
 
-    ss << '\n' << NNUE::trace(pos, network) << '\n';
+    ss << '\n' << NNUE::trace(pos, network, *caches) << '\n';
 
     ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-    Value v = network.evaluate(pos);
-    v       = pos.side_to_move() == WHITE ? v : -v;
-    ss << "NNUE evaluation        " << 0.01 * UCI::to_cp(v) << " (white side)\n";
+    auto [psqt, positional] = network.evaluate(pos, &caches->cache);
+    Value v                 = psqt + positional;
+    v                       = pos.side_to_move() == WHITE ? v : -v;
+    ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
 
-    v = evaluate(network, pos, VALUE_ZERO);
+    v = evaluate(network, pos, *caches, VALUE_ZERO);
     v = pos.side_to_move() == WHITE ? v : -v;
-    ss << "Final evaluation       " << 0.01 * UCI::to_cp(v) << " (white side)";
+    ss << "Final evaluation       " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
     ss << " [with scaled NNUE, ...]";
     ss << "\n";
 

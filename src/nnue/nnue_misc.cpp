@@ -1,14 +1,17 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
   Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
+
   Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
+
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -21,12 +24,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
-#include <iosfwd>
-#include <iostream>
 #include <sstream>
 #include <string_view>
+#include <tuple>
 
-#include "../evaluate.h"
 #include "../position.h"
 #include "../types.h"
 #include "../uci.h"
@@ -39,19 +40,21 @@ namespace Stockfish::Eval::NNUE {
 constexpr std::string_view PieceToChar(" RACPNBK racpnbk");
 
 
-void hint_common_parent_position(const Position& pos, const Network& network) {
+void hint_common_parent_position(const Position&    pos,
+                                 const Network&     network,
+                                 AccumulatorCaches& caches) {
 
-    network.hint_common_access(pos);
+    network.hint_common_access(pos, &caches.cache);
 }
 
-
+namespace {
 // Converts a Value into (centi)pawns and writes it in a buffer.
 // The buffer must have capacity for at least 5 chars.
-static void format_cp_compact(Value v, char* buffer) {
+void format_cp_compact(Value v, char* buffer, const Position& pos) {
 
     buffer[0] = (v < 0 ? '-' : v > 0 ? '+' : ' ');
 
-    int cp = std::abs(UCI::to_cp(v));
+    int cp = std::abs(UCIEngine::to_cp(v, pos));
     if (cp >= 10000)
     {
         buffer[1] = '0' + cp / 10000;
@@ -83,20 +86,21 @@ static void format_cp_compact(Value v, char* buffer) {
 
 
 // Converts a Value into pawns, always keeping two decimals
-static void format_cp_aligned_dot(Value v, std::stringstream& stream) {
+void format_cp_aligned_dot(Value v, std::stringstream& stream, const Position& pos) {
 
-    const double pawns = std::abs(0.01 * UCI::to_cp(v));
+    const double pawns = std::abs(0.01 * UCIEngine::to_cp(v, pos));
 
     stream << (v < 0   ? '-'
                : v > 0 ? '+'
                        : ' ')
            << std::setiosflags(std::ios::fixed) << std::setw(6) << std::setprecision(2) << pawns;
 }
+}
 
 
 // Returns a string with the value of each piece on a board,
 // and a table for (PSQT, Layers) values bucket by bucket.
-std::string trace(Position& pos, const Eval::NNUE::Network& network) {
+std::string trace(Position& pos, const Eval::NNUE::Network& network, AccumulatorCaches& caches) {
 
     std::stringstream ss;
 
@@ -106,7 +110,7 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network) {
         board[row][8 * FILE_NB + 1] = '\0';
 
     // A lambda to output one box of the board
-    auto writeSquare = [&board](File file, Rank rank, Piece pc, Value value) {
+    auto writeSquare = [&board, &pos](File file, Rank rank, Piece pc, Value value) {
         const int x = int(file) * 8;
         const int y = (RANK_9 - int(rank)) * 3;
         for (int i = 1; i < 8; ++i)
@@ -117,13 +121,14 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network) {
         if (pc != NO_PIECE)
             board[y + 1][x + 4] = PieceToChar[pc];
         if (value != VALUE_NONE)
-            format_cp_compact(value, &board[y + 2][x + 2]);
+            format_cp_compact(value, &board[y + 2][x + 2], pos);
     };
 
     // We estimate the value of each piece by doing a differential evaluation from
     // the current base eval, simulating the removal of the piece from its square.
-    Value base = network.evaluate(pos);
-    base       = pos.side_to_move() == WHITE ? base : -base;
+    auto [psqt, positional] = network.evaluate(pos, &caches.cache);
+    Value base              = psqt + positional;
+    base                    = pos.side_to_move() == WHITE ? base : -base;
 
     for (File f = FILE_A; f <= FILE_I; ++f)
         for (Rank r = RANK_0; r <= RANK_9; ++r)
@@ -140,9 +145,10 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network) {
                 st->accumulator.computed[WHITE] = false;
                 st->accumulator.computed[BLACK] = false;
 
-                Value eval = network.evaluate(pos);
-                eval       = pos.side_to_move() == WHITE ? eval : -eval;
-                v          = base - eval;
+                std::tie(psqt, positional) = network.evaluate(pos, &caches.cache);
+                Value eval                 = psqt + positional;
+                eval                       = pos.side_to_move() == WHITE ? eval : -eval;
+                v                          = base - eval;
 
                 pos.put_piece(pc, sq);
                 st->accumulator.computed[WHITE] = false;
@@ -157,7 +163,7 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network) {
         ss << board[row] << '\n';
     ss << '\n';
 
-    auto t = network.trace_evaluate(pos);
+    auto t = network.trace_evaluate(pos, &caches.cache);
 
     ss << " NNUE network contributions "
        << (pos.side_to_move() == WHITE ? "(White to move)" : "(Black to move)") << std::endl
@@ -168,16 +174,16 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network) {
 
     for (std::size_t bucket = 0; bucket < LayerStacks; ++bucket)
     {
-        ss << "|  " << bucket << "        ";
-        ss << " |  ";
-        format_cp_aligned_dot(t.psqt[bucket], ss);
-        ss << "  "
+        ss << "|  " << std::left << std::setw(9) << bucket  //
            << " |  ";
-        format_cp_aligned_dot(t.positional[bucket], ss);
-        ss << "  "
+        format_cp_aligned_dot(t.psqt[bucket], ss, pos);
+        ss << "  "  //
            << " |  ";
-        format_cp_aligned_dot(t.psqt[bucket] + t.positional[bucket], ss);
-        ss << "  "
+        format_cp_aligned_dot(t.positional[bucket], ss, pos);
+        ss << "  "  //
+           << " |  ";
+        format_cp_aligned_dot(t.psqt[bucket] + t.positional[bucket], ss, pos);
+        ss << "  "  //
            << " |";
         if (bucket == t.correctBucket)
             ss << " <-- this bucket is used";

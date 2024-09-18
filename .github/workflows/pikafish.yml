@@ -6,12 +6,12 @@ on:
       - master
 
 jobs:
-  Pikafish:
+  Pikafish-x86-64:
     name: ${{ matrix.config.name }}${{ matrix.arch }}
     runs-on: ${{ matrix.config.os }}
     env:
       ARCH: x86-64${{ matrix.arch }}
-      COMPILER: clang++
+      COMPCXX: clang++
       COMP: clang
       EXE: pikafish${{ matrix.arch }}${{ matrix.config.ext }}
       SDE: ${{ matrix.config.sde }}
@@ -22,30 +22,15 @@ jobs:
             os: ubuntu-20.04 
             shell: bash
             sde: /home/runner/work/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.27.0-2023-09-13-lin/sde -future --
-          - name: MacOS
-            os: macos-latest
-            shell: bash
           - name: Windows
             os: windows-latest
             shell: msys2 {0}
             ext: .exe
             sde: /d/a/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.27.0-2023-09-13-win/sde.exe -future --
-        arch: ["-vnni512", "-avx512", "-avx512f", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt", "-ssse3"]
+        arch: ["-vnni512", "-avx512", "-avx512f", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
         exclude:
           - arch: -avxvnni
             config: {os: ubuntu-20.04}
-          - arch: -vnni512
-            config: {os: macos-latest}
-          - arch: -avx512f
-            config: {os: macos-latest}
-          - arch: -avx512
-            config: {os: macos-latest}
-          - arch: -avxvnni
-            config: {os: macos-latest}
-          - arch: -bmi2
-            config: {os: macos-latest}
-          - arch: -avx2
-            config: {os: macos-latest}
     defaults:
       run:
         working-directory: src
@@ -76,7 +61,6 @@ jobs:
 
       - name: Compile ${{ matrix.arch }} build
         run: |
-          wget -q https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
           make -j profile-build EXE=$EXE WINE_PATH="$SDE"
           make strip EXE=$EXE
           cp $EXE ../
@@ -101,12 +85,12 @@ jobs:
             README.md
             Top CPU Contributors.txt
 
-  Pikafish-MacOS-M1:
+  Pikafish-MacOS:
     name: MacOS-apple-silicon
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       ARCH: apple-silicon
-      COMPILER: clang++
+      COMPCXX: clang++
       COMP: clang
       EXE: pikafish-apple-silicon
     defaults:
@@ -119,7 +103,6 @@ jobs:
 
       - name: Compile apple-silicon build
         run: |
-          wget -q https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
           make -j profile-build EXE=$EXE
           make strip EXE=$EXE
           cp $EXE ../
@@ -134,7 +117,7 @@ jobs:
       # To avoid double-zipping, we use the unzipped directory
       - uses: actions/upload-artifact@v4
         with:
-          name: Pikafish-MacOS-M1-apple-silicon
+          name: Pikafish-MacOS-apple-silicon
           path: |
             ${{ env.EXE }}
             Wiki
@@ -149,7 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ARCH: ${{ matrix.arch }}
-      COMPILER: aarch64-linux-android21-clang++
+      COMPCXX: aarch64-linux-android21-clang++
       COMP: ndk
       EXE: pikafish-${{ matrix.arch }}
       LDFLAGS: "-static -Wno-unused-command-line-argument"
@@ -182,7 +165,6 @@ jobs:
       - name: Compile ${{ matrix.arch }} build
         run: |
           export PATH=${{ env.ANDROID_NDK_BIN }}:$PATH
-          wget -q https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
           make -j profile-build EXE=$EXE WINE_PATH=$EMU
           make strip EXE=$EXE
           cp $EXE ../
