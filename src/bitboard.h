@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,11 +22,18 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 
 #include "types.h"
+
+#ifdef USE_PEXT
+    #define IF_NOT_PEXT(...)
+#else
+    #define IF_NOT_PEXT(...) __VA_ARGS__
+#endif
 
 namespace Stockfish {
 
@@ -82,17 +89,18 @@ int popcount(Bitboard b);  // required for 128 bit pext
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
     Bitboard  mask;
-    Bitboard  magic;
     Bitboard* attacks;
     unsigned  shift;
+    IF_NOT_PEXT(Bitboard magic;)
 
     // Compute the attack's index using the 'magic bitboards' approach
     unsigned index(Bitboard occupied) const {
 
-        if (HasPext)
-            return unsigned(pext(occupied, mask, shift));
-
+#ifdef USE_PEXT
+        return unsigned(pext(occupied, mask, shift));
+#else
         return unsigned(((occupied & mask) * magic) >> shift);
+#endif
     }
 };
 
@@ -310,12 +318,11 @@ inline int popcount(Bitboard b) {
 
 #ifndef USE_POPCNT
 
-    union {
-        Bitboard bb;
-        uint16_t u[8];
-    } v = {b};
-    return PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
-         + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]];
+    std::uint16_t indices[8];
+    std::memcpy(indices, &b, sizeof(b));
+    return PopCnt16[indices[0]] + PopCnt16[indices[1]] + PopCnt16[indices[2]] + PopCnt16[indices[3]]
+         + PopCnt16[indices[4]] + PopCnt16[indices[5]] + PopCnt16[indices[6]]
+         + PopCnt16[indices[7]];
 
 #elif defined(_MSC_VER)
 

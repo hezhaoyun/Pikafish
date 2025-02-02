@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -233,12 +233,26 @@ constexpr Value VALUE_MATE             = 32000;
 constexpr Value VALUE_MATE_IN_MAX_PLY  = VALUE_MATE - MAX_PLY;
 constexpr Value VALUE_MATED_IN_MAX_PLY = -VALUE_MATE_IN_MAX_PLY;
 
-constexpr Value RookValue    = 1357;
-constexpr Value AdvisorValue = 213;
-constexpr Value CannonValue  = 861;
-constexpr Value PawnValue    = 149;
-constexpr Value KnightValue  = 980;
-constexpr Value BishopValue  = 186;
+constexpr bool is_valid(Value value) { return value != VALUE_NONE; }
+
+constexpr bool is_win(Value value) {
+    assert(is_valid(value));
+    return value >= VALUE_MATE_IN_MAX_PLY;
+}
+
+constexpr bool is_loss(Value value) {
+    assert(is_valid(value));
+    return value <= VALUE_MATED_IN_MAX_PLY;
+}
+
+constexpr bool is_decisive(Value value) { return is_win(value) || is_loss(value); }
+
+constexpr Value RookValue    = 1305;
+constexpr Value AdvisorValue = 219;
+constexpr Value CannonValue  = 773;
+constexpr Value PawnValue    = 144;
+constexpr Value KnightValue  = 720;
+constexpr Value BishopValue  = 187;
 
 // clang-format off
 enum PieceType {

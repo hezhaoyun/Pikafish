@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -50,7 +50,6 @@ Engine::Engine(std::optional<std::string> path) :
     threads(),
     network(numaContext, NN::Network({EvalFileDefaultName, "None", ""})) {
     pos.set(StartFEN, &states->back());
-    capSq = SQ_NONE;
 
     options["Debug Log File"] << Option("", [](const Option& o) {
         start_logger(o);
@@ -59,12 +58,13 @@ Engine::Engine(std::optional<std::string> path) :
 
     options["NumaPolicy"] << Option("auto", [this](const Option& o) {
         set_numa_config_from_option(o);
-        return numa_config_information_as_string() + "\n" + thread_binding_information_as_string();
+        return numa_config_information_as_string() + "\n"
+             + thread_allocation_information_as_string();
     });
 
     options["Threads"] << Option(1, 1, 1024, [this](const Option&) {
         resize_threads();
-        return thread_binding_information_as_string();
+        return thread_allocation_information_as_string();
     });
 
     options["Hash"] << Option(16, 1, MaxHashMB, [this](const Option& o) {
@@ -99,7 +99,6 @@ std::uint64_t Engine::perft(const std::string& fen, Depth depth) {
 void Engine::go(Search::LimitsType& limits) {
     assert(limits.perft == 0);
     verify_network();
-    limits.capSq = capSq;
 
     threads.start_thinking(pos, states, limits);
 }
@@ -128,6 +127,10 @@ void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_vi
     updateContext.onBestmove = std::move(f);
 }
 
+void Engine::set_on_verify_networks(std::function<void(std::string_view)>&& f) {
+    onVerifyNetworks = std::move(f);
+}
+
 void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
 
 void Engine::set_position(const std::string& fen, const std::vector<std::string>& moves) {
@@ -135,7 +138,6 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
     states = StateListPtr(new std::deque<StateInfo>(1));
     pos.set(fen, &states->back());
 
-    capSq = SQ_NONE;
     for (const auto& move : moves)
     {
         auto m = UCIEngine::to_move(pos, move);
@@ -145,11 +147,6 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
 
         states->emplace_back();
         pos.do_move(m, states->back());
-
-        capSq          = SQ_NONE;
-        DirtyPiece& dp = states->back().dirtyPiece;
-        if (dp.dirty_num > 1 && dp.to[1] == SQ_NONE)
-            capSq = m.to_sq();
     }
 }
 
@@ -197,7 +194,7 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 
 // network related
 
-void Engine::verify_network() const { network->verify(options["EvalFile"]); }
+void Engine::verify_network() const { network->verify(options["EvalFile"], onVerifyNetworks); }
 
 void Engine::load_network(const std::string& file) {
     network.modify_and_replicate(
@@ -235,6 +232,8 @@ std::string Engine::visualize() const {
     return ss.str();
 }
 
+int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
+
 std::vector<std::pair<size_t, size_t>> Engine::get_bound_thread_count_by_numa_node() const {
     auto                                   counts = threads.get_bound_thread_count_by_numa_node();
     const NumaConfig&                      cfg    = numaContext.get_numa_config();
@@ -260,14 +259,8 @@ std::string Engine::numa_config_information_as_string() const {
 std::string Engine::thread_binding_information_as_string() const {
     auto              boundThreadsByNode = get_bound_thread_count_by_numa_node();
     std::stringstream ss;
-
-    size_t threadsSize = threads.size();
-    ss << "Using " << threadsSize << (threadsSize > 1 ? " threads" : " thread");
-
     if (boundThreadsByNode.empty())
         return ss.str();
-
-    ss << " with NUMA node thread binding: ";
 
     bool isFirst = true;
 
@@ -278,6 +271,22 @@ std::string Engine::thread_binding_information_as_string() const {
         ss << current << "/" << total;
         isFirst = false;
     }
+
+    return ss.str();
+}
+
+std::string Engine::thread_allocation_information_as_string() const {
+    std::stringstream ss;
+
+    size_t threadsSize = threads.size();
+    ss << "Using " << threadsSize << (threadsSize > 1 ? " threads" : " thread");
+
+    auto boundThreadsByNodeStr = thread_binding_information_as_string();
+    if (boundThreadsByNodeStr.empty())
+        return ss.str();
+
+    ss << " with NUMA node thread binding: ";
+    ss << boundThreadsByNodeStr;
 
     return ss.str();
 }

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
@@ -17,10 +17,12 @@
 #define NETWORK_H_INCLUDED
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 #include "../memory.h"
@@ -56,7 +58,7 @@ class Network {
 
     void hint_common_access(const Position& pos, AccumulatorCaches::Cache* cache) const;
 
-    void          verify(std::string evalfilePath) const;
+    void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
     NnueEvalTrace trace_evaluate(const Position& pos, AccumulatorCaches::Cache* cache) const;
 
    private:

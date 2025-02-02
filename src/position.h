@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,11 +44,8 @@ class TranspositionTable;
 struct StateInfo {
 
     // Copied when making a move
-    Key     materialKey;
     Key     pawnKey;
-    Key     majorPieceKey;
     Key     minorPieceKey;
-    Key     defenderPieceKey;
     Key     nonPawnKey[COLOR_NB];
     Value   majorMaterial[COLOR_NB];
     int16_t check10[COLOR_NB];
@@ -137,10 +134,10 @@ class Position {
     Piece captured_piece() const;
 
     // Doing and undoing moves
-    void do_move(Move m, StateInfo& newSt);
-    void do_move(Move m, StateInfo& newSt, bool givesCheck);
+    void do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
+    void do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
     void undo_move(Move m);
-    void do_null_move(StateInfo& newSt, TranspositionTable& tt);
+    void do_null_move(StateInfo& newSt, const TranspositionTable& tt);
     void undo_null_move();
 
     // Static Exchange Evaluation
@@ -148,10 +145,7 @@ class Position {
 
     // Accessing hash keys
     Key key() const;
-    Key key_after(Move m) const;
-    Key material_key() const;
     Key pawn_key() const;
-    Key major_piece_key() const;
     Key minor_piece_key() const;
     Key defender_piece_key() const;
     Key non_pawn_key(Color c) const;
@@ -276,18 +270,13 @@ inline Key Position::key() const { return adjust_key60<false>(st->key); }
 
 template<bool AfterMove>
 inline Key Position::adjust_key60(Key k) const {
-    return st->rule60 < 14 - AfterMove ? k : k ^ make_key((st->rule60 - (14 - AfterMove)) / 8);
+    return (st->rule60 < 14 - AfterMove ? k : k ^ make_key((st->rule60 - (14 - AfterMove)) / 8))
+         ^ (filter[st->key] ? make_key(14) : 0);
 }
 
 inline Key Position::pawn_key() const { return st->pawnKey; }
 
-inline Key Position::material_key() const { return st->materialKey; }
-
-inline Key Position::major_piece_key() const { return st->majorPieceKey; }
-
 inline Key Position::minor_piece_key() const { return st->minorPieceKey; }
-
-inline Key Position::defender_piece_key() const { return st->defenderPieceKey; }
 
 inline Key Position::non_pawn_key(Color c) const { return st->nonPawnKey[c]; }
 
@@ -341,7 +330,9 @@ inline void Position::move_piece(Square from, Square to) {
         kingSquare[color_of(pc)] = to;
 }
 
-inline void Position::do_move(Move m, StateInfo& newSt) { do_move(m, newSt, gives_check(m)); }
+inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {
+    do_move(m, newSt, gives_check(m), tt);
+}
 
 inline StateInfo* Position::state() const { return st; }
 

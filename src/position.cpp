@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -211,8 +211,8 @@ void Position::set_check_info() const {
 // The function is only used when a new position is set up
 void Position::set_state() const {
 
-    st->key = st->materialKey = 0;
-    st->majorPieceKey = st->minorPieceKey = st->defenderPieceKey = 0;
+    st->key               = 0;
+    st->minorPieceKey     = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
     st->majorMaterial[WHITE] = st->majorMaterial[BLACK] = VALUE_ZERO;
@@ -239,32 +239,19 @@ void Position::set_state() const {
             {
                 if (pt & 1)
                     st->majorMaterial[color_of(pc)] += PieceValue[pc];
-
-                if (pt == ROOK)
-                    st->majorPieceKey ^= Zobrist::psq[pc][s];
-
-                else if (pt == KNIGHT || pt == CANNON)
-                    st->minorPieceKey ^= Zobrist::psq[pc][s];
-
                 else
-                    st->defenderPieceKey ^= Zobrist::psq[pc][s];
+                    st->minorPieceKey ^= Zobrist::psq[pc][s];
             }
 
             else
             {
-                st->majorPieceKey ^= Zobrist::psq[pc][s];
                 st->minorPieceKey ^= Zobrist::psq[pc][s];
-                st->defenderPieceKey ^= Zobrist::psq[pc][s];
             }
         }
     }
 
     if (sideToMove == BLACK)
         st->key ^= Zobrist::side;
-
-    for (Piece pc : Pieces)
-        for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
-            st->materialKey ^= Zobrist::psq[pc][cnt];
 }
 
 
@@ -457,7 +444,12 @@ bool Position::gives_check(Move m) const {
 // Makes a move, and saves all information necessary
 // to a StateInfo object. The move is assumed to be legal. Pseudo-legal
 // moves should be filtered out before this function is called.
-void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
+// If a pointer to the TT table is passed, the entry for the new position
+// will be prefetched
+void Position::do_move(Move                      m,
+                       StateInfo&                newSt,
+                       bool                      givesCheck,
+                       const TranspositionTable* tt = nullptr) {
 
     assert(m.is_ok());
     assert(&newSt != st);
@@ -526,18 +518,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
         else
         {
-            if (type_of(captured) & 1)
-                st->majorMaterial[them] -= PieceValue[captured];
             st->nonPawnKey[them] ^= Zobrist::psq[captured][capsq];
 
-            if (type_of(captured) == ROOK)
-                st->majorPieceKey ^= Zobrist::psq[captured][capsq];
-
-            else if (type_of(captured) == KNIGHT || type_of(captured) == CANNON)
-                st->minorPieceKey ^= Zobrist::psq[captured][capsq];
-
+            if (type_of(captured) & 1)
+                st->majorMaterial[them] -= PieceValue[captured];
             else
-                st->defenderPieceKey ^= Zobrist::psq[captured][capsq];
+                st->minorPieceKey ^= Zobrist::psq[captured][capsq];
         }
 
         dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
@@ -557,7 +543,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
         // Update hash key
         k ^= Zobrist::psq[captured][capsq];
-        st->materialKey ^= Zobrist::psq[captured][pieceCount[captured]];
 
         // Reset rule 60 counter
         st->check10[WHITE] = st->check10[BLACK] = st->rule60 = 0;
@@ -573,20 +558,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
         st->nonPawnKey[us] ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
 
         if (type_of(pc) == KING)
-        {
-            st->majorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
             st->minorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
-            st->defenderPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
-        }
-
-        else if (type_of(pc) == ROOK)
-            st->majorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
-
-        else if (type_of(pc) == KNIGHT || type_of(pc) == CANNON)
+        else if (!(type_of(pc) & 1))
             st->minorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
-
-        else
-            st->defenderPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
     }
 
     // Move the piece.
@@ -596,11 +570,13 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
     move_piece(from, to);
 
-    // Set capture piece
-    st->capturedPiece = captured;
-
     // Update the key with the final value
     st->key = k;
+    if (tt)
+        prefetch(tt->first_entry(key()));
+
+    // Set capture piece
+    st->capturedPiece = captured;
 
     // Calculate checkers bitboard (if move gives check)
     st->checkersBB = givesCheck ? checkers_to(us, king_square(them)) : Bitboard(0);
@@ -651,7 +627,7 @@ void Position::undo_move(Move m) {
 
 // Used to do a "null move": it flips
 // the side to move without executing any move on the board.
-void Position::do_null_move(StateInfo& newSt, TranspositionTable& tt) {
+void Position::do_null_move(StateInfo& newSt, const TranspositionTable& tt) {
 
     assert(!checkers());
     assert(&newSt != st);
@@ -695,25 +671,6 @@ void Position::undo_null_move() {
 
     // Update the bloom filter
     --filter[st->key];
-}
-
-
-// Computes the new hash key after the given move. Needed
-// for speculative prefetch.
-Key Position::key_after(Move m) const {
-
-    Square from     = m.from_sq();
-    Square to       = m.to_sq();
-    Piece  pc       = piece_on(from);
-    Piece  captured = piece_on(to);
-    Key    k        = st->key ^ Zobrist::side;
-
-    if (captured)
-        k ^= Zobrist::psq[captured][to];
-
-    k ^= Zobrist::psq[pc][to] ^ Zobrist::psq[pc][from];
-
-    return captured ? k : adjust_key60<true>(k);
 }
 
 
@@ -1072,8 +1029,8 @@ bool Position::rule_judge(Value& result, int ply) {
                 // 2 fold mates need further investigations
                 if (filter[st->key] <= 1)
                 {
-                    // Have the same previous step
-                    if (st->previous->key == stp->previous->key)
+                    // Not exceeding rule 60 and have the same previous step
+                    if (st->rule60 < 120 && st->previous->key == stp->previous->key)
                     {
                         // Even if we entering this loop again, it will not lead to a 3 fold repetition
                         StateInfo* next = stp;

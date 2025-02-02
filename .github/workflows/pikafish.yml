@@ -28,9 +28,6 @@ jobs:
             ext: .exe
             sde: /d/a/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.27.0-2023-09-13-win/sde.exe -future --
         arch: ["-vnni512", "-avx512", "-avx512f", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
-        exclude:
-          - arch: -avxvnni
-            config: {os: ubuntu-20.04}
     defaults:
       run:
         working-directory: src
@@ -42,8 +39,14 @@ jobs:
       - name: Install LLVM and Clang
         if: runner.os == 'Linux'
         run: |
-          sudo apt update
-          sudo apt install clang llvm
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x llvm.sh
+          echo | sudo ./llvm.sh 19
+          rm llvm.sh
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
+          sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-19 100
+          sudo update-alternatives --set clang++ /usr/bin/clang++-19
+          sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-19
 
       - name: Setup msys and install required packages
         if: runner.os == 'Windows'

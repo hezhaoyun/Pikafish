@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
@@ -48,7 +48,7 @@ bool read_parameters(std::istream& stream, T& reference) {
 
 // Write evaluation function parameters
 template<typename T>
-bool write_parameters(std::ostream& stream, const T& reference) {
+bool write_parameters(std::ostream& stream, T& reference) {
 
     write_little_endian<std::uint32_t>(stream, T::get_hash_value());
     return reference.write_parameters(stream);
@@ -161,36 +161,45 @@ NetworkOutput Network::evaluate(const Position& pos, AccumulatorCaches::Cache* c
 }
 
 
-void Network::verify(std::string evalfilePath) const {
+void Network::verify(std::string                                  evalfilePath,
+                     const std::function<void(std::string_view)>& f) const {
     if (evalfilePath.empty())
         evalfilePath = evalFile.defaultName;
 
     if (evalFile.current != evalfilePath)
     {
-        std::string msg1 =
-          "Network evaluation parameters compatible with the engine must be available.";
-        std::string msg2 = "The network file " + evalfilePath + " was not loaded successfully.";
-        std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
-                           "including the directory name, to the network file.";
-        std::string msg4 =
-          "The default net can be downloaded from: "
-          "https://github.com/official-pikafish/Networks/releases/download/master-net/"
-          + evalFile.defaultName;
-        std::string msg5 = "The engine will be terminated now.";
+        if (f)
+        {
+            std::string msg1 =
+              "Network evaluation parameters compatible with the engine must be available.";
+            std::string msg2 = "The network file " + evalfilePath + " was not loaded successfully.";
+            std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
+                               "including the directory name, to the network file.";
+            std::string msg4 =
+              "The default net can be downloaded from: "
+              "https://github.com/official-pikafish/Networks/releases/download/master-net/"
+              + evalFile.defaultName;
+            std::string msg5 = "The engine will be terminated now.";
 
-        sync_cout << "info string ERROR: " << msg1 << sync_endl;
-        sync_cout << "info string ERROR: " << msg2 << sync_endl;
-        sync_cout << "info string ERROR: " << msg3 << sync_endl;
-        sync_cout << "info string ERROR: " << msg4 << sync_endl;
-        sync_cout << "info string ERROR: " << msg5 << sync_endl;
+            std::string msg = "ERROR: " + msg1 + '\n' + "ERROR: " + msg2 + '\n' + "ERROR: " + msg3
+                            + '\n' + "ERROR: " + msg4 + '\n' + "ERROR: " + msg5 + '\n';
+
+            f(msg);
+        }
+
         exit(EXIT_FAILURE);
     }
 
-    size_t size = sizeof(*featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks;
-    sync_cout << "info string NNUE evaluation using " << evalfilePath << " ("
-              << size / (1024 * 1024) << "MiB, (" << featureTransformer->InputDimensions << ", "
-              << TransformedFeatureDimensions << ", " << NetworkArchitecture::FC_0_OUTPUTS << ", "
-              << NetworkArchitecture::FC_1_OUTPUTS << ", 1))" << sync_endl;
+    if (f)
+    {
+        size_t size = sizeof(*featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks;
+        f("info string NNUE evaluation using " + evalfilePath + " ("
+          + std::to_string(size / (1024 * 1024)) + "MiB, ("
+          + std::to_string(featureTransformer->InputDimensions) + ", "
+          + std::to_string(TransformedFeatureDimensions) + ", "
+          + std::to_string(NetworkArchitecture::FC_0_OUTPUTS) + ", "
+          + std::to_string(NetworkArchitecture::FC_1_OUTPUTS) + ", 1))");
+    }
 }
 
 
@@ -233,14 +242,8 @@ NnueEvalTrace Network::trace_evaluate(const Position& pos, AccumulatorCaches::Ca
 
 
 void Network::load_user_net(const std::string& dir, const std::string& evalfilePath) {
-    std::stringstream sstream     = read_zipped_nnue(dir + evalfilePath);
+    std::stringstream sstream     = read_compressed_nnue(dir + evalfilePath);
     auto              description = load(sstream);
-
-    if (!description.has_value())
-    {
-        std::ifstream stream(dir + evalfilePath, std::ios::binary);
-        description = load(stream);
-    }
 
     if (description.has_value())
     {

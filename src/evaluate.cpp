@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -45,21 +45,18 @@ Value Eval::evaluate(const Eval::NNUE::Network& network,
     assert(!pos.checkers());
 
     auto [psqt, positional] = network.evaluate(pos, &caches.cache);
-    Value nnue              = (1563 * psqt + 1633 * positional) / 1183;
+    Value nnue              = psqt + positional;
     int   nnueComplexity    = std::abs(psqt - positional);
 
     // Blend optimism and eval with nnue complexity
-    optimism += optimism * nnueComplexity / 550;
-    nnue -= nnue * nnueComplexity / 10129;
+    optimism += optimism * nnueComplexity / 485;
+    nnue -= nnue * nnueComplexity / 11683;
 
-    int mm = pos.major_material() / 39;
-    int v  = (nnue * (430 + mm) + optimism * (101 + mm)) / 575;
-
-    // Evaluation grain (to get more alpha-beta cuts) with randomization (for robustness)
-    v = (v / 16) * 16 - 1 + (pos.key() & 0x2);
+    int mm = pos.major_material() / 40;
+    int v  = (nnue * (443 + mm) + optimism * (76 + mm)) / 503;
 
     // Damp down the evaluation linearly when shuffling
-    v -= (v * pos.rule60_count()) / 244;
+    v -= (v * pos.rule60_count()) / 267;
 
     // Guarantee evaluation does not hit the mate range
     v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);

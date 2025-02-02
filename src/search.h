@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,8 +30,8 @@
 #include <string_view>
 #include <vector>
 
+#include "history.h"
 #include "misc.h"
-#include "movepick.h"
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
@@ -59,18 +59,21 @@ namespace Search {
 // shallower and deeper in the tree during the search. Each search thread has
 // its own array of Stack objects, indexed by the current ply.
 struct Stack {
-    Move*           pv;
-    PieceToHistory* continuationHistory;
-    int             ply;
-    Move            currentMove;
-    Move            excludedMove;
-    Value           staticEval;
-    int             statScore;
-    int             moveCount;
-    bool            inCheck;
-    bool            ttPv;
-    bool            ttHit;
-    int             cutoffCnt;
+    Move*                       pv;
+    PieceToHistory*             continuationHistory;
+    CorrectionHistory<PieceTo>* continuationCorrectionHistory;
+    int                         ply;
+    Move                        currentMove;
+    Move                        excludedMove;
+    Value                       staticEval;
+    int                         statScore;
+    int                         moveCount;
+    bool                        inCheck;
+    bool                        ttPv;
+    bool                        ttHit;
+    int                         cutoffCnt;
+    int                         reduction;
+    bool                        isTTMove;
 };
 
 
@@ -88,14 +91,15 @@ struct RootMove {
         return m.score != score ? m.score < score : m.previousScore < previousScore;
     }
 
-    uint64_t          effort          = 0;
-    Value             score           = -VALUE_INFINITE;
-    Value             previousScore   = -VALUE_INFINITE;
-    Value             averageScore    = -VALUE_INFINITE;
-    Value             uciScore        = -VALUE_INFINITE;
-    bool              scoreLowerbound = false;
-    bool              scoreUpperbound = false;
-    int               selDepth        = 0;
+    uint64_t          effort           = 0;
+    Value             score            = -VALUE_INFINITE;
+    Value             previousScore    = -VALUE_INFINITE;
+    Value             averageScore     = -VALUE_INFINITE;
+    Value             meanSquaredScore = -VALUE_INFINITE * VALUE_INFINITE;
+    Value             uciScore         = -VALUE_INFINITE;
+    bool              scoreLowerbound  = false;
+    bool              scoreUpperbound  = false;
+    int               selDepth         = 0;
     std::vector<Move> pv;
 };
 
@@ -120,7 +124,6 @@ struct LimitsType {
     int                      movestogo, depth, mate, perft, infinite;
     uint64_t                 nodes;
     bool                     ponderMode;
-    Square                   capSq;
 };
 
 
@@ -245,18 +248,17 @@ class Worker {
     void ensure_network_replicated();
 
     // Public because they need to be updatable by the stats
-    ButterflyHistory      mainHistory;
-    ButterflyHistory      rootHistory;
+    ButterflyHistory mainHistory;
+    LowPlyHistory    lowPlyHistory;
+
     CapturePieceToHistory captureHistory;
     ContinuationHistory   continuationHistory[2][2];
     PawnHistory           pawnHistory;
 
-    PawnCorrectionHistory          pawnCorrectionHistory;
-    MaterialCorrectionHistory      materialCorrectionHistory;
-    MajorPieceCorrectionHistory    majorPieceCorrectionHistory;
-    MinorPieceCorrectionHistory    minorPieceCorrectionHistory;
-    DefenderPieceCorrectionHistory defenderPieceCorrectionHistory;
-    NonPawnCorrectionHistory       nonPawnCorrectionHistory[COLOR_NB];
+    CorrectionHistory<Pawn>         pawnCorrectionHistory;
+    CorrectionHistory<Minor>        minorPieceCorrectionHistory;
+    CorrectionHistory<NonPawn>      nonPawnCorrectionHistory[COLOR_NB];
+    CorrectionHistory<Continuation> continuationCorrectionHistory;
 
    private:
     void iterative_deepening();
@@ -279,6 +281,8 @@ class Worker {
 
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
+
+    Value evaluate(const Position&);
 
     LimitsType limits;
 
@@ -313,6 +317,11 @@ class Worker {
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;
+};
+
+struct ConthistBonus {
+    int index;
+    int weight;
 };
 
 
