@@ -29,8 +29,7 @@
 #include <utility>
 
 #include "bitboard.h"
-
-#include "nnue/nnue_accumulator.h"
+#include "nnue/features/half_ka_v2_hm.h"
 #include "types.h"
 
 namespace Pikafish {
@@ -56,17 +55,12 @@ struct StateInfo {
     Key        key;
     Bitboard   checkersBB;
     StateInfo* previous;
-    StateInfo* next;
     Bitboard   blockersForKing[COLOR_NB];
     Bitboard   pinners[COLOR_NB];
     Bitboard   checkSquares[PIECE_TYPE_NB];
     bool       needSlowCheck;
     Piece      capturedPiece;
     Move       move;
-
-    // Used by NNUE
-    Eval::NNUE::Accumulator accumulator;
-    DirtyPiece              dirtyPiece;
 };
 
 
@@ -75,7 +69,6 @@ struct StateInfo {
 // 'draw by repetition' detection. Use a std::deque because pointers to
 // elements are not invalidated upon list resizing.
 using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
-
 
 // Position class stores information regarding the board representation as
 // pieces, side to move, hash keys, etc. Important methods are
@@ -95,9 +88,9 @@ class Position {
     std::string fen() const;
 
     // Position representation
-    Bitboard pieces(PieceType pt = ALL_PIECES) const;
+    Bitboard pieces() const;  // All pieces
     template<typename... PieceTypes>
-    Bitboard pieces(PieceType pt, PieceTypes... pts) const;
+    Bitboard pieces(PieceTypes... pts) const;
     Bitboard pieces(Color c) const;
     template<typename... PieceTypes>
     Bitboard pieces(Color c, PieceTypes... pts) const;
@@ -106,8 +99,9 @@ class Position {
     template<PieceType Pt>
     int count(Color c) const;
     template<PieceType Pt>
-    int    count() const;
-    Square king_square(Color c) const;
+    int      count() const;
+    Square   king_square(Color c) const;
+    uint64_t mid_encoding(Color c) const;
 
     // Checking
     Bitboard checkers() const;
@@ -134,11 +128,11 @@ class Position {
     Piece captured_piece() const;
 
     // Doing and undoing moves
-    void do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
-    void do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
-    void undo_move(Move m);
-    void do_null_move(StateInfo& newSt, const TranspositionTable& tt);
-    void undo_null_move();
+    void       do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
+    DirtyPiece do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
+    void       undo_move(Move m);
+    void       do_null_move(StateInfo& newSt, const TranspositionTable& tt);
+    void       undo_null_move();
 
     // Static Exchange Evaluation
     bool see_ge(Move m, int threshold = 0) const;
@@ -163,7 +157,6 @@ class Position {
     bool pos_is_ok() const;
     void flip();
 
-    // Used by NNUE
     StateInfo* state() const;
 
     void put_piece(Piece pc, Square s);
@@ -176,8 +169,8 @@ class Position {
 
     // Other helpers
     void                  move_piece(Square from, Square to);
-    std::pair<Piece, int> light_do_move(Move m);
-    void                  light_undo_move(Move m, Piece captured, int id = 0);
+    std::pair<Piece, int> do_move(Move m);
+    void                  undo_move(Move m, Piece captured, int id = 0);
     Value                 detect_chases(int d, int ply = 0);
     bool                  chase_legal(Move m) const;
     template<bool AfterMove>
@@ -189,6 +182,7 @@ class Position {
     Bitboard   byColorBB[COLOR_NB];
     Square     kingSquare[COLOR_NB];
     int        pieceCount[PIECE_NB];
+    uint64_t   midEncoding[COLOR_NB];
     StateInfo* st;
     int        gamePly;
     Color      sideToMove;
@@ -213,11 +207,11 @@ inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
 inline Piece Position::moved_piece(Move m) const { return piece_on(m.from_sq()); }
 
-inline Bitboard Position::pieces(PieceType pt) const { return byTypeBB[pt]; }
+inline Bitboard Position::pieces() const { return byTypeBB[ALL_PIECES]; }
 
 template<typename... PieceTypes>
-inline Bitboard Position::pieces(PieceType pt, PieceTypes... pts) const {
-    return pieces(pt) | pieces(pts...);
+inline Bitboard Position::pieces(PieceTypes... pts) const {
+    return (byTypeBB[pts] | ...);
 }
 
 inline Bitboard Position::pieces(Color c) const { return byColorBB[c]; }
@@ -239,6 +233,8 @@ inline int Position::count() const {
 
 inline Square Position::king_square(Color c) const { return kingSquare[c]; }
 
+inline uint64_t Position::mid_encoding(Color c) const { return midEncoding[c]; }
+
 inline Bitboard Position::attackers_to(Square s) const { return attackers_to(s, pieces()); }
 
 inline Bitboard Position::checkers_to(Color c, Square s) const {
@@ -252,7 +248,7 @@ inline Bitboard Position::attacks_by(Color c) const {
     Bitboard attackers = pieces(c, Pt);
     while (attackers)
         if (Pt == PAWN)
-            threats |= pawn_attacks_bb(c, pop_lsb(attackers));
+            threats |= attacks_bb<PAWN>(pop_lsb(attackers), c);
         else
             threats |= attacks_bb<Pt>(pop_lsb(attackers), pieces());
     return threats;
@@ -304,6 +300,7 @@ inline void Position::put_piece(Piece pc, Square s) {
     byColorBB[color_of(pc)] |= s;
     pieceCount[pc]++;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
+    midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][s];
 }
 
 inline void Position::remove_piece(Square s) {
@@ -315,6 +312,7 @@ inline void Position::remove_piece(Square s) {
     board[s] = NO_PIECE;
     pieceCount[pc]--;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
+    midEncoding[color_of(pc)] -= Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][s];
 }
 
 inline void Position::move_piece(Square from, Square to) {
@@ -328,6 +326,8 @@ inline void Position::move_piece(Square from, Square to) {
     board[to]   = pc;
     if (type_of(pc) == KING)
         kingSquare[color_of(pc)] = to;
+    midEncoding[color_of(pc)] -= Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][from];
+    midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][to];
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {

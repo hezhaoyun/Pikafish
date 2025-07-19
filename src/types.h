@@ -37,7 +37,9 @@
 //               | only in 64-bit mode and requires hardware with pext support.
 
     #include <cassert>
+    #include <cstddef>
     #include <cstdint>
+    #include <type_traits>
 
     #if defined(_MSC_VER)
         // Disable some silly and noisy warnings from MSVC compiler
@@ -55,9 +57,15 @@
 // _WIN32                  Building on Windows (any)
 // _WIN64                  Building on Windows 64 bit
 
-    #if defined(__GNUC__) && (__GNUC__ < 9 || (__GNUC__ == 9 && __GNUC_MINOR__ <= 2)) \
-      && defined(_WIN32) && !defined(__clang__)
-        #define ALIGNAS_ON_STACK_VARIABLES_BROKEN
+// Enforce minimum GCC version
+    #if defined(__GNUC__) && !defined(__clang__) \
+      && (__GNUC__ < 9 || (__GNUC__ == 9 && __GNUC_MINOR__ < 3))
+        #error "Pikafish requires GCC 9.3 or later for correct compilation"
+    #endif
+
+    // Enforce minimum Clang version
+    #if defined(__clang__) && (__clang_major__ < 10)
+        #error "Pikafish requires Clang 10.0 or later for correct compilation"
     #endif
 
     #define ASSERT_ALIGNED(ptr, alignment) assert(reinterpret_cast<uintptr_t>(ptr) % alignment == 0)
@@ -206,13 +214,13 @@ struct Bitboard {
 constexpr int MAX_MOVES = 128;
 constexpr int MAX_PLY   = 246;
 
-enum Color {
+enum Color : int8_t {
     WHITE,
     BLACK,
     COLOR_NB = 2
 };
 
-enum Bound {
+enum Bound : int8_t {
     BOUND_NONE,
     BOUND_UPPER,
     BOUND_LOWER,
@@ -255,46 +263,45 @@ constexpr Value KnightValue  = 720;
 constexpr Value BishopValue  = 187;
 
 // clang-format off
-enum PieceType {
-    NO_PIECE_TYPE, ROOK, ADVISOR, CANNON, PAWN, KNIGHT, BISHOP, KING, KNIGHT_TO,
+enum PieceType : std::int8_t {
+    NO_PIECE_TYPE, ROOK, ADVISOR, CANNON, PAWN, KNIGHT, BISHOP, KING, KNIGHT_TO, PAWN_TO,
     ALL_PIECES = 0,
     PIECE_TYPE_NB = 8
 };
 
-enum Piece {
+enum Piece : std::int8_t {
     NO_PIECE,
     W_ROOK           , W_ADVISOR, W_CANNON, W_PAWN, W_KNIGHT, W_BISHOP, W_KING,
     B_ROOK = ROOK + 8, B_ADVISOR, B_CANNON, B_PAWN, B_KNIGHT, B_BISHOP, B_KING,
     PIECE_NB
 };
-
-constexpr Value PieceValue[PIECE_NB] = {
-  VALUE_ZERO, RookValue,   AdvisorValue, CannonValue, PawnValue,  KnightValue, BishopValue,  VALUE_ZERO,
-  VALUE_ZERO, RookValue,   AdvisorValue, CannonValue, PawnValue,  KnightValue, BishopValue,  VALUE_ZERO};
 // clang-format on
+
+constexpr Value PieceValue[PIECE_NB] = {VALUE_ZERO, RookValue,   AdvisorValue, CannonValue,
+                                        PawnValue,  KnightValue, BishopValue,  VALUE_ZERO,
+                                        VALUE_ZERO, RookValue,   AdvisorValue, CannonValue,
+                                        PawnValue,  KnightValue, BishopValue,  VALUE_ZERO};
 
 using Depth = int;
 
-enum : int {
-    // The following DEPTH_ constants are used for transposition table entries
-    // and quiescence search move generation stages. In regular search, the
-    // depth stored in the transposition table is literal: the search depth
-    // (effort) used to make the corresponding transposition table value. In
-    // quiescence search, however, the transposition table entries only store
-    // the current quiescence move generation stage (which should thus compare
-    // lower than any regular search depth).
-    DEPTH_QS = 0,
-    // For transposition table entries where no searching at all was done
-    // (whether regular or qsearch) we use DEPTH_UNSEARCHED, which should thus
-    // compare lower than any quiescence or regular depth. DEPTH_ENTRY_OFFSET
-    // is used only for the transposition table entry occupancy check (see tt.cpp),
-    // and should thus be lower than DEPTH_UNSEARCHED.
-    DEPTH_UNSEARCHED   = -2,
-    DEPTH_ENTRY_OFFSET = -3
-};
+// The following DEPTH_ constants are used for transposition table entries
+// and quiescence search move generation stages. In regular search, the
+// depth stored in the transposition table is literal: the search depth
+// (effort) used to make the corresponding transposition table value. In
+// quiescence search, however, the transposition table entries only store
+// the current quiescence move generation stage (which should thus compare
+// lower than any regular search depth).
+constexpr Depth DEPTH_QS = 0;
+// For transposition table entries where no searching at all was done
+// (whether regular or qsearch) we use DEPTH_UNSEARCHED, which should thus
+// compare lower than any quiescence or regular depth. DEPTH_ENTRY_OFFSET
+// is used only for the transposition table entry occupancy check (see tt.cpp),
+// and should thus be lower than DEPTH_UNSEARCHED.
+constexpr Depth DEPTH_UNSEARCHED   = -2;
+constexpr Depth DEPTH_ENTRY_OFFSET = -3;
 
 // clang-format off
-enum Square : int {
+enum Square : int8_t {
     SQ_A0, SQ_B0, SQ_C0, SQ_D0, SQ_E0, SQ_F0, SQ_G0, SQ_H0, SQ_I0,
     SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1,
     SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2,
@@ -312,7 +319,7 @@ enum Square : int {
 };
 // clang-format on
 
-enum Direction : int {
+enum Direction : int8_t {
     NORTH = 9,
     EAST  = 1,
     SOUTH = -NORTH,
@@ -324,7 +331,7 @@ enum Direction : int {
     NORTH_WEST = NORTH + WEST
 };
 
-enum File : int {
+enum File : int8_t {
     FILE_A,
     FILE_B,
     FILE_C,
@@ -337,7 +344,7 @@ enum File : int {
     FILE_NB
 };
 
-enum Rank : int {
+enum Rank : int8_t {
     RANK_0,
     RANK_1,
     RANK_2,
@@ -363,24 +370,19 @@ struct BloomFilter {
 
 // Keep track of what a move changes on the board (used by NNUE)
 struct DirtyPiece {
+    Piece  pc;  // this is never allowed to be NO_PIECE
+    Square from, to;
 
-    // Number of changed pieces
-    int dirty_num;
-
-    // Max 2 pieces can change in one move. A capture moves the captured
-    // piece to SQ_NONE and the piece to the capture square.
-    Piece piece[2];
-
-    // From and to squares, which may be SQ_NONE
-    Square from[2];
-    Square to[2];
+    // if remove_sq is SQ_NONE, remove_pc is allowed to be uninitialized
+    Square remove_sq;
+    Piece  remove_pc;
 
     bool requires_refresh[2];
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \
-        inline T& operator++(T& d) { return d = T(int(d) + 1); } \
-        inline T& operator--(T& d) { return d = T(int(d) - 1); }
+        constexpr T& operator++(T& d) { return d = T(int(d) + 1); } \
+        constexpr T& operator--(T& d) { return d = T(int(d) - 1); }
 
 ENABLE_INCR_OPERATORS_ON(PieceType)
 ENABLE_INCR_OPERATORS_ON(Square)
@@ -394,10 +396,10 @@ constexpr Direction operator+(Direction d1, Direction d2) { return Direction(int
 constexpr Direction operator*(int i, Direction d) { return Direction(i * int(d)); }
 
 // Additional operators to add a Direction to a Square
-constexpr Square operator+(Square s, Direction d) { return Square(int(s) + int(d)); }
-constexpr Square operator-(Square s, Direction d) { return Square(int(s) - int(d)); }
-inline Square&   operator+=(Square& s, Direction d) { return s = s + d; }
-inline Square&   operator-=(Square& s, Direction d) { return s = s - d; }
+constexpr Square  operator+(Square s, Direction d) { return Square(int(s) + int(d)); }
+constexpr Square  operator-(Square s, Direction d) { return Square(int(s) - int(d)); }
+constexpr Square& operator+=(Square& s, Direction d) { return s = s + d; }
+constexpr Square& operator-=(Square& s, Direction d) { return s = s - d; }
 
 // Toggle color
 constexpr Color operator~(Color c) { return Color(c ^ BLACK); }
@@ -415,7 +417,7 @@ constexpr Piece make_piece(Color c, PieceType pt) { return Piece((c << 3) + pt);
 
 constexpr PieceType type_of(Piece pc) { return PieceType(pc & 7); }
 
-inline Color color_of(Piece pc) {
+constexpr Color color_of(Piece pc) {
     assert(pc != NO_PIECE);
     return Color(pc >> 3);
 }
@@ -488,6 +490,14 @@ class Move {
    protected:
     std::uint16_t data;
 };
+
+template<typename T, typename... Ts>
+struct is_all_same {
+    static constexpr bool value = (std::is_same_v<T, Ts> && ...);
+};
+
+template<typename... Ts>
+constexpr auto is_all_same_v = is_all_same<Ts...>::value;
 
 }  // namespace Pikafish
 

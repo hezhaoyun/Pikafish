@@ -36,7 +36,7 @@ namespace Pikafish {
 constexpr int PAWN_HISTORY_SIZE        = 512;    // has to be a power of 2
 constexpr int CORRECTION_HISTORY_SIZE  = 32768;  // has to be a power of 2
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
-constexpr int LOW_PLY_HISTORY_SIZE     = 4;
+constexpr int LOW_PLY_HISTORY_SIZE     = 5;
 
 static_assert((PAWN_HISTORY_SIZE & (PAWN_HISTORY_SIZE - 1)) == 0,
               "PAWN_HISTORY_SIZE has to be a power of 2");
@@ -71,7 +71,7 @@ inline int non_pawn_index(const Position& pos) {
 template<typename T, int D>
 class StatsEntry {
 
-    static_assert(std::is_arithmetic<T>::value, "Not an arithmetic type");
+    static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
     static_assert(D <= std::numeric_limits<T>::max(), "D overflows T");
 
     T entry;
@@ -131,21 +131,16 @@ using PawnHistory = Stats<std::int16_t, 8192, PAWN_HISTORY_SIZE, PIECE_NB, SQUAR
 // see https://www.chessprogramming.org/Static_Evaluation_Correction_History
 enum CorrHistType {
     Pawn,          // By color and pawn structure
-    Minor,         // By color and positions of minor pieces (Advisor, Bishop) and King
-    NonPawn,       // By Non-pawn material positions and color
+    Minor,         // By color and positions of minor pieces (Knight, Cannon)
+    NonPawn,       // By non-pawn material positions and color
     PieceTo,       // By [piece][to] move
     Continuation,  // Combined history of move pairs
 };
 
 namespace Detail {
 
-template<CorrHistType _>
+template<CorrHistType>
 struct CorrHistTypedef {
-    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB, CORRECTION_HISTORY_SIZE>;
-};
-
-template<>
-struct CorrHistTypedef<NonPawn> {
     using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, CORRECTION_HISTORY_SIZE, COLOR_NB>;
 };
 
@@ -159,10 +154,18 @@ struct CorrHistTypedef<Continuation> {
     using type = MultiArray<CorrHistTypedef<PieceTo>::type, PIECE_NB, SQUARE_NB>;
 };
 
+template<>
+struct CorrHistTypedef<NonPawn> {
+    using type =
+      Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, CORRECTION_HISTORY_SIZE, COLOR_NB, COLOR_NB>;
+};
+
 }
 
 template<CorrHistType T>
 using CorrectionHistory = typename Detail::CorrHistTypedef<T>::type;
+
+using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 
 }  // namespace Pikafish
 

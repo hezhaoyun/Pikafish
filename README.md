@@ -34,7 +34,7 @@
 ## Overview
 
 [Pikafish][website-link] is a **free and strong UCI xiangqi engine** derived from
-[Stockfish][stockfish-link] that analyzes xiangqi positions and computes the optimal moves.
+[Pikafish][stockfish-link] that analyzes xiangqi positions and computes the optimal moves.
 
 Pikafish **does not include a graphical user interface** (GUI) that is required
 to display a chessboard and to make it easy to input moves. These GUIs are
@@ -75,9 +75,9 @@ the current tests on [Fishtest][fishtest-link].
 
 In the [chessprogramming wiki][programming-link], many techniques used in
 Pikafish are explained with a lot of background information.
-The [section on Stockfish][programmingsf-link] describes many features
-and techniques used by Stockfish. However, it is generic rather than
-focused on Stockfish's precise implementation.
+The [section on Pikafish][programmingsf-link] describes many features
+and techniques used by Pikafish. However, it is generic rather than
+focused on Pikafish's precise implementation.
 
 The engine testing is done on [Fishtest][fishtest-link].
 If you want to help improve Pikafish, please read this [guideline][guideline-link]
@@ -146,7 +146,7 @@ project][px0-data-link], which is made available under the [Open Database Licens
 [license-link]:			https://github.com/official-pikafish/Pikafish/blob/master/Copying.txt
 [pikafish-logo]:			https://pikafish.org/assets/logo_256.png
 [programming-link]:		https://www.chessprogramming.org/Main_Page
-[programmingsf-link]:	https://www.chessprogramming.org/Stockfish
+[programmingsf-link]:	https://www.chessprogramming.org/Pikafish
 [qqgroup-link]:			https://jq.qq.com/?_wv=1027&k=FORWUh4W
 [readme-link]:			https://github.com/official-pikafish/Pikafish/blob/master/README.md
 [release-badge]:			https://img.shields.io/github/v/release/official-pikafish/Pikafish?style=for-the-badge&label=official%20release
@@ -154,7 +154,7 @@ project][px0-data-link], which is made available under the [Open Database Licens
 [rulebook-badge]:		https://img.shields.io/badge/computer%20rule-20B2AA?style=for-the-badge&logo=mdbook
 [rulebook-link]:			https://pikafish.org/rule.html
 [src-link]:				https://github.com/official-pikafish/Pikafish/tree/master/src
-[stockfish-link]:			https://github.com/official-stockfish/Stockfish
+[stockfish-link]:			https://github.com/official-stockfish/Pikafish
 [uci-link]:				https://backscattering.de/chess/uci/
 [website-badge]:		https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=website&up_color=success&up_message=Online&url=https://pikafish.org
 [website-link]:			https://pikafish.org

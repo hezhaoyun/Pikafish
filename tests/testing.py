@@ -49,10 +49,10 @@ class TSAN:
         with open(f"tsan.supp", "w") as f:
             f.write(
                 """
-race:Stockfish::TTEntry::read
-race:Stockfish::TTEntry::save
-race:Stockfish::TranspositionTable::probe
-race:Stockfish::TranspositionTable::hashfull
+race:Pikafish::TTEntry::read
+race:Pikafish::TTEntry::save
+race:Pikafish::TranspositionTable::probe
+race:Pikafish::TranspositionTable::hashfull
 """
             )
 
@@ -97,14 +97,17 @@ class Syzygy:
                 tarball_path = os.path.join(tmpdirname, f"{file}.tar.gz")
 
                 response = requests.get(url, stream=True)
-                with open(tarball_path, 'wb') as f:
+                with open(tarball_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 
                 with tarfile.open(tarball_path, "r:gz") as tar:
                     tar.extractall(tmpdirname)
 
-                shutil.move(os.path.join(tmpdirname, file), os.path.join(PATH, "syzygy"))
+                shutil.move(
+                    os.path.join(tmpdirname, file), os.path.join(PATH, "syzygy")
+                )
+
 
 class OrderedClassMembers(type):
     @classmethod
@@ -277,7 +280,7 @@ class MiniTestFramework:
         print(f"    {GREEN_COLOR}✓{RESET_COLOR}{add}", flush=True)
 
 
-class Stockfish:
+class Pikafish:
     def __init__(
         self,
         prefix: List[str],
@@ -297,7 +300,7 @@ class Stockfish:
     def _check_process_alive(self):
         if not self.process or self.process.poll() is not None:
             print("\n".join(self.output))
-            raise RuntimeError("Stockfish process has terminated")
+            raise RuntimeError("Pikafish process has terminated")
 
     def start(self):
         if self.cli:
@@ -307,7 +310,10 @@ class Stockfish:
                 text=True,
             )
 
-            self.process.stdout
+            if self.process.returncode != 0:
+                print(self.process.stdout)
+                print(self.process.stderr)
+                print(f"Process failed with return code {self.process.returncode}")
 
             return
 
@@ -325,7 +331,7 @@ class Stockfish:
 
     def send_command(self, command: str):
         if not self.process:
-            raise RuntimeError("Stockfish process is not started")
+            raise RuntimeError("Pikafish process is not started")
 
         self._check_process_alive()
 
@@ -367,7 +373,7 @@ class Stockfish:
 
     def readline(self):
         if not self.process:
-            raise RuntimeError("Stockfish process is not started")
+            raise RuntimeError("Pikafish process is not started")
 
         while True:
             self._check_process_alive()

@@ -19,15 +19,15 @@ jobs:
       matrix:
         config:
           - name: Linux
-            os: ubuntu-20.04 
+            os: ubuntu-22.04 
             shell: bash
-            sde: /home/runner/work/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.27.0-2023-09-13-lin/sde -future --
+            sde: /home/runner/work/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.33.0-2024-01-07-lin/sde -future --
           - name: Windows
             os: windows-latest
             shell: msys2 {0}
             ext: .exe
-            sde: /d/a/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.27.0-2023-09-13-win/sde.exe -future --
-        arch: ["-vnni512", "-avx512", "-avx512f", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
+            sde: /d/a/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.33.0-2024-01-07-win/sde.exe -future --
+        arch: ["-vnni512", "-bw512", "-avx512", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
     defaults:
       run:
         working-directory: src
@@ -41,12 +41,12 @@ jobs:
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod u+x llvm.sh
-          echo | sudo ./llvm.sh 19
+          echo | sudo ./llvm.sh 20
           rm llvm.sh
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
-          sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-19 100
-          sudo update-alternatives --set clang++ /usr/bin/clang++-19
-          sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-19
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 100
+          sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-20 100
+          sudo update-alternatives --set clang++ /usr/bin/clang++-20
+          sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-20
 
       - name: Setup msys and install required packages
         if: runner.os == 'Windows'
@@ -56,14 +56,17 @@ jobs:
           install: mingw-w64-clang-x86_64-clang make git expect
 
       - name: Download SDE package
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: petarpetrovt/setup-sde@91a1a03434384e064706634125a15f7446d2aafb  # @v2.3
+        if: "!(matrix.arch == '-bmi2' || matrix.arch == '-avx2' || matrix.arch == '-sse41-popcnt')"
+        uses: petarpetrovt/setup-sde@v2.4
         with:
           environmentVariableName: SDE_DIR
-          sdeVersion: 9.27.0
+          sdeVersion: 9.33.0
 
       - name: Compile ${{ matrix.arch }} build
         run: |
+          if [[ "${{ matrix.arch }}" == "-bmi2" || "${{ matrix.arch }}" == "-avx2" || "${{ matrix.arch }}" == "-sse41-popcnt" ]]; then
+            SDE=""
+          fi
           make -j profile-build EXE=$EXE WINE_PATH="$SDE"
           make strip EXE=$EXE
           cp $EXE ../
@@ -135,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ARCH: ${{ matrix.arch }}
-      COMPCXX: aarch64-linux-android21-clang++
+      COMPCXX: aarch64-linux-android29-clang++
       COMP: ndk
       EXE: pikafish-${{ matrix.arch }}
       LDFLAGS: "-static -Wno-unused-command-line-argument"
@@ -156,7 +159,7 @@ jobs:
 
       - name: Install NDK
         run: |
-          NDKV="21.4.7075529"
+          NDKV="27.2.12479018"
           ANDROID_ROOT=/usr/local/lib/android
           ANDROID_SDK_ROOT=$ANDROID_ROOT/sdk
           SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager

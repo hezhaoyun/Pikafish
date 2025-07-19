@@ -124,80 +124,77 @@ void MovePicker::score() {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    [[maybe_unused]] Bitboard threatenedByPawn, threatenedByDefender, threatenedByMinor,
-      threatenedPieces;
+    Color us = pos.side_to_move();
+
+    [[maybe_unused]] Bitboard threatByLesser[BISHOP + 1];
     if constexpr (Type == QUIETS)
     {
-        Color us = pos.side_to_move();
-
-        threatenedByPawn = pos.attacks_by<PAWN>(~us);
-        threatenedByDefender =
-          pos.attacks_by<ADVISOR>(~us) | pos.attacks_by<BISHOP>(~us) | threatenedByPawn;
-        threatenedByMinor =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<CANNON>(~us) | threatenedByDefender;
-
-        // Pieces threatened by pieces of lesser material value
-        threatenedPieces = (pos.pieces(us, ROOK) & threatenedByMinor)
-                         | (pos.pieces(us, KNIGHT, CANNON) & threatenedByDefender)
-                         | (pos.pieces(us, ADVISOR, BISHOP) & threatenedByPawn);
+        threatByLesser[ADVISOR] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[KNIGHT]                           = threatByLesser[CANNON] =
+          pos.attacks_by<ADVISOR>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[ADVISOR];
+        threatByLesser[ROOK] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<CANNON>(~us) | threatByLesser[KNIGHT];
     }
 
     for (auto& m : *this)
     {
+        const Square    from          = m.from_sq();
+        const Square    to            = m.to_sq();
+        const Piece     pc            = pos.moved_piece(m);
+        const PieceType pt            = type_of(pc);
+        const Piece     capturedPiece = pos.piece_on(to);
+
         if constexpr (Type == CAPTURES)
-            m.value =
-              7 * int(PieceValue[pos.piece_on(m.to_sq())])
-              + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
+            m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
+                    + 7 * int(PieceValue[capturedPiece])
+                    + 1024
+                        * bool((pt == CANNON
+                                  ? pos.check_squares(pt) & ~line_bb(from, pos.king_square(~us))
+                                  : pos.check_squares(pt))
+                               & to);
 
         else if constexpr (Type == QUIETS)
         {
-            Piece     pc   = pos.moved_piece(m);
-            PieceType pt   = type_of(pc);
-            Square    from = m.from_sq();
-            Square    to   = m.to_sq();
-
             // histories
-            m.value = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()];
+            m.value = 2 * (*mainHistory)[us][m.from_to()];
             m.value += 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
             m.value += (*continuationHistory[0])[pc][to];
             m.value += (*continuationHistory[1])[pc][to];
             m.value += (*continuationHistory[2])[pc][to];
             m.value += (*continuationHistory[3])[pc][to];
-            m.value += (*continuationHistory[4])[pc][to] / 3;
             m.value += (*continuationHistory[5])[pc][to];
 
             // bonus for checks
-            m.value += bool((pt == CANNON ? pos.check_squares(pt)
-                                              & ~line_bb(from, pos.king_square(~pos.side_to_move()))
-                                          : pos.check_squares(pt))
-                            & to)
-                     * 16384;
+            m.value +=
+              (bool((pt == CANNON ? pos.check_squares(pt) & ~line_bb(from, pos.king_square(~us))
+                                  : pos.check_squares(pt))
+                    & to)
+               && pos.see_ge(m, -75))
+              * 16384;
 
-            // bonus for escaping from capture
-            m.value += threatenedPieces & from
-                       ? (pt == ROOK && !(to & threatenedByMinor)                          ? 50000
-                          : (pt == KNIGHT || pt == CANNON) && !(to & threatenedByDefender) ? 25000
-                          : !(to & threatenedByPawn)                                       ? 15000
-                                                                                           : 0)
-                       : 0;
-
-            // malus for putting piece en prise
-            m.value -= (pt == ROOK ? bool(to & threatenedByMinor) * 50000
-                        : (pt == KNIGHT || pt == CANNON) && bool(to & threatenedByDefender) ? 25000
-                                                                                            : 0);
+            // penalty for moving to a square threatened by a lesser piece
+            // or bonus for escaping an attack by a lesser piece.
+            if (pt != PAWN && pt <= BISHOP)
+            {
+                static constexpr int bonus[BISHOP + 1] = {0, 517, 144, 256, 0, 256, 144};
+                int v = threatByLesser[pt] & to ? -95 : 100 * bool(threatByLesser[pt] & from);
+                m.value += bonus[pt] * v;
+            }
 
             if (ply < LOW_PLY_HISTORY_SIZE)
-                m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
+                m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
         }
 
         else  // Type == EVASIONS
         {
             if (pos.capture(m))
-                m.value = PieceValue[pos.piece_on(m.to_sq())] + (1 << 28);
+                m.value = PieceValue[capturedPiece] + (1 << 28);
             else
-                m.value = (*mainHistory)[pos.side_to_move()][m.from_to()]
-                        + (*continuationHistory[0])[pos.moved_piece(m)][m.to_sq()]
-                        + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][m.to_sq()];
+            {
+                m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
+                if (ply < LOW_PLY_HISTORY_SIZE)
+                    m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+            }
         }
     }
 }
@@ -207,7 +204,7 @@ void MovePicker::score() {
 template<typename Pred>
 Move MovePicker::select(Pred filter) {
 
-    for (; cur < endMoves; ++cur)
+    for (; cur < endCur; ++cur)
         if (*cur != ttMove && filter())
             return *cur++;
 
@@ -218,8 +215,6 @@ Move MovePicker::select(Pred filter) {
 // new pseudo-legal move on every call until there are no more moves left,
 // picking the move with the highest score from a list of generated moves.
 Move MovePicker::next_move() {
-
-    auto quiet_threshold = [](Depth d) { return -3330 * d; };
 
 top:
     switch (stage)
@@ -236,18 +231,20 @@ top:
     case PROBCUT_INIT :
     case QCAPTURE_INIT :
         cur = endBadCaptures = moves;
-        endMoves             = generate<CAPTURES>(pos, cur);
+        endCur               = generate<CAPTURES>(pos, cur);
 
         score<CAPTURES>();
-        partial_insertion_sort(cur, endMoves, std::numeric_limits<int>::min());
+        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         goto top;
 
     case GOOD_CAPTURE :
         if (select([&]() {
                 // Move losing capture to endBadCaptures to be tried later
-                return pos.see_ge(*cur, -cur->value / 18) ? true
-                                                          : (*endBadCaptures++ = *cur, false);
+                if (pos.see_ge(*cur, -cur->value / 18))
+                    return true;
+                *endBadCaptures++ = *cur;
+                return false;
             }))
             return *(cur - 1);
 
@@ -257,29 +254,28 @@ top:
     case QUIET_INIT :
         if (!skipQuiets)
         {
-            cur      = endBadCaptures;
-            endMoves = beginBadQuiets = endBadQuiets = generate<QUIETS>(pos, cur);
+            cur = endBadQuiets = endBadCaptures;
+            endCur             = generate<QUIETS>(pos, cur);
 
             score<QUIETS>();
-            partial_insertion_sort(cur, endMoves, quiet_threshold(depth));
+            partial_insertion_sort(cur, endCur, -3330 * depth);
         }
 
         ++stage;
         [[fallthrough]];
 
     case GOOD_QUIET :
-        if (!skipQuiets && select([]() { return true; }))
-        {
-            if ((cur - 1)->value > -8000 || (cur - 1)->value <= quiet_threshold(depth))
-                return *(cur - 1);
-
-            // Remaining quiets are bad
-            beginBadQuiets = cur - 1;
-        }
+        if (!skipQuiets && select([&]() {
+                if (cur->value > -14000)
+                    return true;
+                *endBadQuiets++ = *cur;
+                return false;
+            }))
+            return *(cur - 1);
 
         // Prepare the pointers to loop over the bad captures
-        cur      = moves;
-        endMoves = endBadCaptures;
+        cur    = moves;
+        endCur = endBadCaptures;
 
         ++stage;
         [[fallthrough]];
@@ -289,8 +285,8 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over the bad quiets
-        cur      = beginBadQuiets;
-        endMoves = endBadQuiets;
+        cur    = endBadCaptures;
+        endCur = endBadQuiets;
 
         ++stage;
         [[fallthrough]];
@@ -302,11 +298,11 @@ top:
         return Move::none();
 
     case EVASION_INIT :
-        cur      = moves;
-        endMoves = generate<EVASIONS>(pos, cur);
+        cur    = moves;
+        endCur = generate<EVASIONS>(pos, cur);
 
         score<EVASIONS>();
-        partial_insertion_sort(cur, endMoves, std::numeric_limits<int>::min());
+        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         [[fallthrough]];
 

@@ -24,6 +24,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
+#include <iosfwd>
+#include <iostream>
 #include <sstream>
 #include <string_view>
 #include <tuple>
@@ -39,13 +41,6 @@ namespace Pikafish::Eval::NNUE {
 
 constexpr std::string_view PieceToChar(" RACPNBK racpnbk");
 
-
-void hint_common_parent_position(const Position&    pos,
-                                 const Network&     network,
-                                 AccumulatorCaches& caches) {
-
-    network.hint_common_access(pos, &caches.cache);
-}
 
 namespace {
 // Converts a Value into (centi)pawns and writes it in a buffer.
@@ -100,7 +95,8 @@ void format_cp_aligned_dot(Value v, std::stringstream& stream, const Position& p
 
 // Returns a string with the value of each piece on a board,
 // and a table for (PSQT, Layers) values bucket by bucket.
-std::string trace(Position& pos, const Eval::NNUE::Network& network, AccumulatorCaches& caches) {
+std::string
+trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::AccumulatorCaches& caches) {
 
     std::stringstream ss;
 
@@ -124,9 +120,11 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network, Accumulator
             format_cp_compact(value, &board[y + 2][x + 2], pos);
     };
 
+    AccumulatorStack accumulators;
+
     // We estimate the value of each piece by doing a differential evaluation from
     // the current base eval, simulating the removal of the piece from its square.
-    auto [psqt, positional] = network.evaluate(pos, &caches.cache);
+    auto [psqt, positional] = networks.big.evaluate(pos, accumulators, &caches.big);
     Value base              = psqt + positional;
     base                    = pos.side_to_move() == WHITE ? base : -base;
 
@@ -139,20 +137,15 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network, Accumulator
 
             if (pc != NO_PIECE && type_of(pc) != KING)
             {
-                auto st = pos.state();
-
                 pos.remove_piece(sq);
-                st->accumulator.computed[WHITE] = false;
-                st->accumulator.computed[BLACK] = false;
 
-                std::tie(psqt, positional) = network.evaluate(pos, &caches.cache);
+                accumulators.reset();
+                std::tie(psqt, positional) = networks.big.evaluate(pos, accumulators, &caches.big);
                 Value eval                 = psqt + positional;
                 eval                       = pos.side_to_move() == WHITE ? eval : -eval;
                 v                          = base - eval;
 
                 pos.put_piece(pc, sq);
-                st->accumulator.computed[WHITE] = false;
-                st->accumulator.computed[BLACK] = false;
             }
 
             writeSquare(f, r, pc, v);
@@ -163,7 +156,8 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network, Accumulator
         ss << board[row] << '\n';
     ss << '\n';
 
-    auto t = network.trace_evaluate(pos, &caches.cache);
+    accumulators.reset();
+    auto t = networks.big.trace_evaluate(pos, accumulators, &caches.big);
 
     ss << " NNUE network contributions "
        << (pos.side_to_move() == WHITE ? "(White to move)" : "(Black to move)") << std::endl

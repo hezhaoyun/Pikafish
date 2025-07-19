@@ -73,7 +73,8 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    bool                        isTTMove;
+    bool                        isPvNode;
+    int                         quietMoveStreak;
 };
 
 
@@ -130,19 +131,19 @@ struct LimitsType {
 // The UCI stores the uci options, thread pool, and transposition table.
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
-    SharedState(const OptionsMap&                              optionsMap,
-                ThreadPool&                                    threadPool,
-                TranspositionTable&                            transpositionTable,
-                const LazyNumaReplicated<Eval::NNUE::Network>& net) :
+    SharedState(const OptionsMap&                               optionsMap,
+                ThreadPool&                                     threadPool,
+                TranspositionTable&                             transpositionTable,
+                const LazyNumaReplicated<Eval::NNUE::Networks>& nets) :
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
-        network(net) {}
+        networks(nets) {}
 
-    const OptionsMap&                              options;
-    ThreadPool&                                    threads;
-    TranspositionTable&                            tt;
-    const LazyNumaReplicated<Eval::NNUE::Network>& network;
+    const OptionsMap&                               options;
+    ThreadPool&                                     threads;
+    TranspositionTable&                             tt;
+    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
 };
 
 class Worker;
@@ -257,11 +258,19 @@ class Worker {
 
     CorrectionHistory<Pawn>         pawnCorrectionHistory;
     CorrectionHistory<Minor>        minorPieceCorrectionHistory;
-    CorrectionHistory<NonPawn>      nonPawnCorrectionHistory[COLOR_NB];
+    CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;
     CorrectionHistory<Continuation> continuationCorrectionHistory;
+
+    TTMoveHistory ttMoveHistory;
 
    private:
     void iterative_deepening();
+
+    void do_move(Position& pos, const Move move, StateInfo& st);
+    void do_move(Position& pos, const Move move, StateInfo& st, const bool givesCheck);
+    void do_null_move(Position& pos, StateInfo& st);
+    void undo_move(Position& pos, const Move move);
+    void undo_null_move(Position& pos);
 
     // This is the main search function, for both PV and non-PV nodes
     template<NodeType nodeType>
@@ -307,12 +316,13 @@ class Worker {
     // The main thread has a SearchManager, the others have a NullSearchManager
     std::unique_ptr<ISearchManager> manager;
 
-    const OptionsMap&                              options;
-    ThreadPool&                                    threads;
-    TranspositionTable&                            tt;
-    const LazyNumaReplicated<Eval::NNUE::Network>& network;
+    const OptionsMap&                               options;
+    ThreadPool&                                     threads;
+    TranspositionTable&                             tt;
+    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
 
     // Used by NNUE
+    Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
 
     friend class Pikafish::ThreadPool;

@@ -39,11 +39,11 @@ case $1 in
     threads="2"
 
 cat << EOF > tsan.supp
-race:Stockfish::TTEntry::read
-race:Stockfish::TTEntry::save
+race:Pikafish::TTEntry::read
+race:Pikafish::TTEntry::save
 
-race:Stockfish::TranspositionTable::probe
-race:Stockfish::TranspositionTable::hashfull
+race:Pikafish::TranspositionTable::probe
+race:Pikafish::TranspositionTable::hashfull
 
 EOF
 
@@ -105,7 +105,7 @@ cat << EOF > game.exp
  expect_before timeout { exit 2 }
 
  spawn $exeprefix ./stockfish
- expect "Stockfish"
+ expect "Pikafish"
 
  send "uci\n"
  expect "uciok"
@@ -254,7 +254,7 @@ cat << EOF > syzygy.exp
  # expect_before timeout { exit 2 } eof { exit 3 }
  expect_before timeout { exit 2 }
  spawn $exeprefix ./stockfish
- expect "Stockfish"
+ expect "Pikafish"
  send "uci\n"
  send "setoption name SyzygyPath value ../tests/syzygy/\n"
  expect "info string Found 35 tablebases"

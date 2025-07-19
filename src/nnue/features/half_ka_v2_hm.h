@@ -30,7 +30,6 @@
 #include "../nnue_common.h"
 
 namespace Pikafish {
-struct StateInfo;
 class Position;
 }
 
@@ -96,17 +95,21 @@ class HalfKAv2_hm {
           // clang-format on
         };
 #undef M
-        std::array<std::array<std::pair<int, bool>, SQUARE_NB>, SQUARE_NB> v{};
+        std::array<std::array<std::array<std::pair<int, bool>, 2>, SQUARE_NB>, SQUARE_NB> v{};
         for (uint8_t ksq = SQ_A0; ksq <= SQ_I9; ++ksq)
             for (uint8_t oksq = SQ_A0; oksq <= SQ_I9; ++oksq)
-            {
-                uint8_t king_bucket_ = KingBuckets[ksq];
-                int     king_bucket  = king_bucket_ & 0x7;
-                bool    mirror =
-                  (king_bucket_ >> 3) || ((king_bucket & 1) && (KingBuckets[oksq] >> 3));
-                v[ksq][oksq].first  = king_bucket;
-                v[ksq][oksq].second = mirror;
-            }
+                for (uint8_t midm = 0; midm <= 1; ++midm)
+                {
+                    uint8_t king_bucket_ = KingBuckets[ksq];
+                    int     king_bucket  = king_bucket_ & 0x7;
+                    int     oking_bucket = KingBuckets[oksq] & 0x7;
+                    bool    mirror =
+                      (king_bucket_ >> 3)
+                      || ((king_bucket & 1)
+                          && ((KingBuckets[oksq] >> 3) || (bool(oking_bucket & 1) && midm)));
+                    v[ksq][oksq][midm].first  = king_bucket;
+                    v[ksq][oksq][midm].second = mirror;
+                }
         return v;
     }();
 
@@ -120,16 +123,16 @@ class HalfKAv2_hm {
                         if (rook != 0)
                             if (knight > 0 && cannon > 0)
                                 return 0;
-                            else if (rook == 1 && knight + cannon <= 1)
-                                return 2;
-                            else
+                            else if (rook == 2 || knight + cannon > 1)
                                 return 1;
+                            else
+                                return 2;
                         else if (knight > 0 && cannon > 0)
                             return 3;
-                        else if (knight + cannon <= 1)
-                            return 5;
-                        else
+                        else if (knight + cannon > 1)
                             return 4;
+                        else
+                            return 5;
                     }();
         return v;
     }();
@@ -184,16 +187,104 @@ class HalfKAv2_hm {
                                 return 13;
                             else if (us_rook > 0 && opp_rook == 0)
                                 return 14;
-                            else if (us_rook == 0 && opp_rook > 0)
+                            else  // us_rook == 0 && opp_rook > 0
                                 return 15;
-                            return -1;
                         }();
         return v;
     }();
 
+    /* 64 bit encoding related to mid mirror, which is devided into two parts, pieces counts and squares except for king
+    *
+    *  Encoding representations:
+    *    Middle king   : | 1 bit | -> Active when king in FILE_E
+    *    Piece types   : |advisor|bishop| pawn |knight|cannon| rook |
+    *    Piece counts  : | 3 bits|3 bits|4 bits|3 bits|3 bits|3 bits| -> 19 bits
+    *    Guarding bit  : | 1 bits| -> Set to one to prevent overflow from piece squares part into piece counts part
+    *    Piece squares : | 7 bits|7 bits|8 bits|7 bits|7 bits|7 bits| -> 43 bits
+    *
+    *  Piece counts for the left flank (i.e. FILE_A to FILE_D) of the board are 1, for the right flank (i.e. FILE_F to
+    *  FILE_I) are -1, mirroring that of the left flank but with a negative sign, and for the center is 0.
+    *
+    *  Piece squares for the left flank of the board are positive, counting from 0 to 39, for the right flank are
+    *  negative, counting from -39 to 0, mirroring that of the left flank but with a negative sign, and for the center
+    *  is 0. For black pieces, the encoding is vertically flipped.
+    *
+    *  Encoding for piece at the left flank of the board is positive, for example, encoding for a single piece 'rook'
+    *  at square 'A3' (assuming A3 is 33) is:
+    *    Middle king   : | 0|
+    *    Piece counts  : | 0| 0| 0| 0| 0| 1|
+    *    Guarding bits : | 0|
+    *    Piece squares : | 0| 0| 0| 0| 0|33|
+    *
+    *  Encoding for piece at the right flank of the board is getting negated, which means a negative sign is added to
+    *  the final encoding of that piece, for example, the encoding of the same piece on square 'I3' (assuming I3 is -33)
+    *  is:
+    *    -(Middle king   : | 0|
+    *      Piece counts  : | 0| 0| 0| 0| 0| 1|
+    *      Guarding bits : | 0|
+    *      Piece squares : | 0| 0| 0| 0| 0|33|)
+    *
+    *  Encoding for piece at FILE_E of the board is all zero, for example, the encoding of the some piece on square 'E3'
+    *  is:
+    *    Middle king   : | 0| (| 1| if the piece is king)
+    *    Piece counts  : | 0| 0| 0| 0| 0| 0|
+    *    Guarding bits : | 0|
+    *    Piece squares : | 0| 0| 0| 0| 0| 0|
+    *
+    *  The overall encoding of a balance position is (with the concept of complement numbers being used):
+    *    Middle king   : | 1|
+    *    Piece counts  : | 2| 2| 5| 2| 2| 2|
+    *    Guarding bits : | 1|
+    *    Piece squares : |39|39|76|39|39|39|
+    *  Where 39 can account for subtraction of 0 - 39 for non-pawn pieces and 76 can account for subtraction of two pawns
+    *  (0 + 1) - (38 + 39) at most in a balanced position.
+    *
+    *  Each piece placed will add its encoding to the overall representation, and removing a piece will do a subtraction.
+    *
+    *  Now we just need to test if the encoding of the board is smaller than balance position to see if we need mirroring:
+    *    If the piece count is imbalance for both flanks, the result will be fully decided by the first part of the
+    *    encoding, regardless of the second part and overflows.
+    *    If the piece count is balance, the first part of the encoding must be the same, and the result will be decided
+    *    by the second part, and all overflows of the second part will be automatically resolved at this time.
+    */
+    static constexpr auto MidMirrorEncoding = [] {
+        std::array<std::array<uint64_t, static_cast<size_t>(SQUARE_NB)>,
+                   static_cast<size_t>(PIECE_NB)>
+                          encodings{};
+        constexpr uint8_t shifts[8][2]{{0, 0},   {44, 0},  {60, 36}, {47, 7},
+                                       {53, 21}, {50, 14}, {57, 29}, {0, 0}};
+        for (const auto& c : {WHITE, BLACK})
+            for (uint8_t pt = ROOK; pt <= KING; ++pt)
+                for (uint8_t r = RANK_0; r < RANK_NB; ++r)
+                    for (uint8_t f = FILE_A; f < FILE_NB; ++f)
+                    {
+                        uint64_t encoding = 0;
+                        if (f != FILE_E && pt != KING)
+                        {
+                            uint8_t r_           = c == WHITE ? r : RANK_9 - r;
+                            uint8_t f_           = f < FILE_E ? f : FILE_I - f;
+                            const auto& [s1, s2] = shifts[pt];
+                            encoding             = (1ULL << s1)
+                                     | ((uint64_t(File::FILE_D - f_) * 10 + uint64_t(r_)) << s2);
+                            encoding = f < FILE_E ? encoding : uint64_t(-int64_t(encoding));
+                        }
+                        else if (f != FILE_E && pt == KING)
+                            encoding = 1ULL << 63;
+                        uint8_t p        = static_cast<uint8_t>(make_piece(c, PieceType(pt)));
+                        uint8_t sq       = static_cast<uint8_t>(make_square(File(f), Rank(r)));
+                        encodings[p][sq] = encoding;
+                    }
+        return encodings;
+    }();
+
+    static constexpr uint64_t BalanceEncoding{0xa4a92a74e989d3a7};
+
     // Maximum number of simultaneously active features.
     static constexpr IndexType MaxActiveDimensions = 32;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
+
+    // Returns whether the middle mirror is required.
+    static bool requires_mid_mirror(const Position& pos, Color c);
 
     // Get attack bucket
     static IndexType make_attack_bucket(const Position& pos, Color c);
@@ -210,14 +301,9 @@ class HalfKAv2_hm {
     static void append_changed_indices(
       int bucket, bool mirror, const DirtyPiece& dp, IndexList& removed, IndexList& added);
 
-    // Returns the cost of updating one perspective, the most costly one.
-    // Assumes no refresh needed.
-    static int update_cost(const StateInfo* st);
-    static int refresh_cost(const Position& pos);
-
-    // Returns whether the change stored in this StateInfo means
+    // Returns whether the change stored in this DirtyPiece means
     // that a full accumulator refresh is required.
-    static bool requires_refresh(const StateInfo* st, Color perspective);
+    static bool requires_refresh(const DirtyPiece& dirtyPiece, Color perspective);
 };
 
 }  // namespace Pikafish::Eval::NNUE::Features

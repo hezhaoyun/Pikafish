@@ -22,9 +22,15 @@
 
 #include "../../position.h"
 #include "../../types.h"
-#include "../nnue_accumulator.h"
+#include "../nnue_common.h"
 
 namespace Pikafish::Eval::NNUE::Features {
+
+bool HalfKAv2_hm::requires_mid_mirror(const Position& pos, Color c) {
+    return ((1ULL << 63) & pos.mid_encoding(c) & pos.mid_encoding(~c))
+        && (pos.mid_encoding(c) < BalanceEncoding
+            || (pos.mid_encoding(c) == BalanceEncoding && pos.mid_encoding(~c) < BalanceEncoding));
+}
 
 // Get attack bucket
 IndexType HalfKAv2_hm::make_attack_bucket(const Position& pos, Color c) {
@@ -55,13 +61,13 @@ template IndexType HalfKAv2_hm::make_index<BLACK>(Square s, Piece pc, int bucket
 template<Color Perspective>
 void HalfKAv2_hm::append_changed_indices(
   int bucket, bool mirror, const DirtyPiece& dp, IndexList& removed, IndexList& added) {
-    for (int i = 0; i < dp.dirty_num; ++i)
-    {
-        if (dp.from[i] != SQ_NONE)
-            removed.push_back(make_index<Perspective>(dp.from[i], dp.piece[i], bucket, mirror));
-        if (dp.to[i] != SQ_NONE)
-            added.push_back(make_index<Perspective>(dp.to[i], dp.piece[i], bucket, mirror));
-    }
+    removed.push_back(make_index<Perspective>(dp.from, dp.pc, bucket, mirror));
+
+    if (dp.to != SQ_NONE)
+        added.push_back(make_index<Perspective>(dp.to, dp.pc, bucket, mirror));
+
+    if (dp.remove_sq != SQ_NONE)
+        removed.push_back(make_index<Perspective>(dp.remove_sq, dp.remove_pc, bucket, mirror));
 }
 
 // Explicit template instantiations
@@ -70,12 +76,8 @@ template void HalfKAv2_hm::append_changed_indices<WHITE>(
 template void HalfKAv2_hm::append_changed_indices<BLACK>(
   int bucket, bool mirror, const DirtyPiece& dp, IndexList& removed, IndexList& added);
 
-int HalfKAv2_hm::update_cost(const StateInfo* st) { return st->dirtyPiece.dirty_num; }
-
-int HalfKAv2_hm::refresh_cost(const Position& pos) { return pos.count<ALL_PIECES>(); }
-
-bool HalfKAv2_hm::requires_refresh(const StateInfo* st, Color perspective) {
-    return st->dirtyPiece.requires_refresh[perspective];
+bool HalfKAv2_hm::requires_refresh(const DirtyPiece& dirtyPiece, Color perspective) {
+    return dirtyPiece.requires_refresh[perspective];
 }
 
 }  // namespace Pikafish::Eval::NNUE::Features

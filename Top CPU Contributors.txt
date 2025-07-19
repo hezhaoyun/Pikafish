@@ -179,5 +179,5 @@ CPU Hours                     Username
 39465                         qianbai
 
 
-3. Stockfish Fishtest Contributors (https://github.com/official-stockfish/Stockfish/blob/master/Top CPU Contributors.txt)
+3. Pikafish Fishtest Contributors (https://github.com/official-stockfish/Pikafish/blob/master/Top CPU Contributors.txt)
 Thank you!
