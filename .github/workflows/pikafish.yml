@@ -11,23 +11,19 @@ jobs:
     runs-on: ${{ matrix.config.os }}
     env:
       ARCH: x86-64${{ matrix.arch }}
-      COMPCXX: clang++
       COMP: clang
       EXE: pikafish${{ matrix.arch }}${{ matrix.config.ext }}
-      SDE: ${{ matrix.config.sde }}
     strategy:
       matrix:
         config:
           - name: Linux
             os: ubuntu-22.04 
             shell: bash
-            sde: /home/runner/work/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.33.0-2024-01-07-lin/sde -future --
           - name: Windows
             os: windows-latest
             shell: msys2 {0}
             ext: .exe
-            sde: /d/a/Pikafish/Pikafish/.output/sde-temp-files/sde-external-9.33.0-2024-01-07-win/sde.exe -future --
-        arch: ["-vnni512", "-bw512", "-avx512", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
+        arch: ["-avx512icl", "-vnni512", "-avx512bw", "-avx512", "-avxvnni", "-bmi2", "-avx2", "-sse41-popcnt"]
     defaults:
       run:
         working-directory: src
@@ -36,67 +32,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM and Clang
-        if: runner.os == 'Linux'
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod u+x llvm.sh
-          echo | sudo ./llvm.sh 20
-          rm llvm.sh
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 100
-          sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-20 100
-          sudo update-alternatives --set clang++ /usr/bin/clang++-20
-          sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-20
-
       - name: Setup msys and install required packages
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: clang64
-          install: mingw-w64-clang-x86_64-clang make git expect
-
-      - name: Download SDE package
-        if: "!(matrix.arch == '-bmi2' || matrix.arch == '-avx2' || matrix.arch == '-sse41-popcnt')"
-        uses: petarpetrovt/setup-sde@v2.4
-        with:
-          environmentVariableName: SDE_DIR
-          sdeVersion: 9.33.0
+          install: mingw-w64-clang-x86_64-clang make git
 
       - name: Compile ${{ matrix.arch }} build
         run: |
-          if [[ "${{ matrix.arch }}" == "-bmi2" || "${{ matrix.arch }}" == "-avx2" || "${{ matrix.arch }}" == "-sse41-popcnt" ]]; then
-            SDE=""
-          fi
-          make -j profile-build EXE=$EXE WINE_PATH="$SDE"
+          make -j build EXE=$EXE
           make strip EXE=$EXE
           cp $EXE ../
-
-      - name: Download wiki
-        run: |
-          git clone https://github.com/official-pikafish/Pikafish.wiki.git ../Wiki
-          cd ../Wiki
-          rm -rf .git
 
       # Artifacts automatically get zipped.
       # To avoid double-zipping, we use the unzipped directory
       - uses: actions/upload-artifact@v4
         with:	
           name: Pikafish-${{ matrix.config.name }}${{ matrix.arch }}
-          path: |
-            ${{ env.EXE }}
-            Wiki
-            AUTHORS
-            CONTRIBUTING.md
-            Copying.txt
-            README.md
-            Top CPU Contributors.txt
+          path: ${{ env.EXE }}
 
   Pikafish-MacOS:
     name: MacOS-apple-silicon
     runs-on: macos-latest
     env:
       ARCH: apple-silicon
-      COMPCXX: clang++
       COMP: clang
       EXE: pikafish-apple-silicon
     defaults:
@@ -109,36 +69,22 @@ jobs:
 
       - name: Compile apple-silicon build
         run: |
-          make -j profile-build EXE=$EXE
+          make -j build EXE=$EXE
           make strip EXE=$EXE
           cp $EXE ../
-
-      - name: Download wiki
-        run: |
-          git clone https://github.com/official-pikafish/Pikafish.wiki.git ../Wiki
-          cd ../Wiki
-          rm -rf .git
 
       # Artifacts automatically get zipped.
       # To avoid double-zipping, we use the unzipped directory
       - uses: actions/upload-artifact@v4
         with:
           name: Pikafish-MacOS-apple-silicon
-          path: |
-            ${{ env.EXE }}
-            Wiki
-            AUTHORS
-            CONTRIBUTING.md
-            Copying.txt
-            README.md
-            Top CPU Contributors.txt
+          path: ${{ env.EXE }}
 
   Pikafish-Android:
     name: Android-${{ matrix.arch }}
     runs-on: ubuntu-latest
     env:
       ARCH: ${{ matrix.arch }}
-      COMPCXX: aarch64-linux-android29-clang++
       COMP: ndk
       EXE: pikafish-${{ matrix.arch }}
       LDFLAGS: "-static -Wno-unused-command-line-argument"
@@ -151,11 +97,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download required linux packages
-        run: |
-          sudo apt update
-          sudo apt install qemu-user
 
       - name: Install NDK
         run: |
@@ -171,7 +112,7 @@ jobs:
       - name: Compile ${{ matrix.arch }} build
         run: |
           export PATH=${{ env.ANDROID_NDK_BIN }}:$PATH
-          make -j profile-build EXE=$EXE WINE_PATH=$EMU
+          make -j build EXE=$EXE
           make strip EXE=$EXE
           cp $EXE ../
 
@@ -180,8 +121,46 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:	
           name: Pikafish-Android-${{ matrix.arch }}
+          path: ${{ env.EXE }}
+
+  Pikafish:
+    name: Pikafish
+    runs-on: ubuntu-latest
+    needs: [Pikafish-x86-64, Pikafish-MacOS, Pikafish-Android]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+      
+      - name: Put binaries into OS-specific directories
+        run: |
+          mkdir Windows
+          mv Pikafish-Windows*/* Windows
+          mkdir Linux
+          mv Pikafish-Linux*/* Linux
+          mkdir MacOS
+          mv Pikafish-MacOS*/* MacOS
+          mkdir Android
+          mv Pikafish-Android*/* Android
+
+      - name: Download wiki
+        run: |
+          git clone https://github.com/official-pikafish/Pikafish.wiki.git Wiki
+          cd Wiki
+          rm -rf .git
+
+      # Artifacts automatically get zipped.
+      # To avoid double-zipping, we use the unzipped directory
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pikafish
           path: |
-            ${{ env.EXE }}
+            Windows
+            Linux
+            MacOS
+            Android
+            Wiki
             AUTHORS
             CONTRIBUTING.md
             Copying.txt

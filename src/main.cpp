@@ -17,13 +17,14 @@
 */
 
 #include <iostream>
-#include <string>
+#include <memory>
 
 #include "bitboard.h"
 #include "misc.h"
 #include "position.h"
-#include "uci.h"
 #include "tune.h"
+#include "types.h"
+#include "uci.h"
 
 using namespace Pikafish;
 
@@ -34,11 +35,11 @@ int engineMain(int argc, char* argv[]) {
     Bitboards::init();
     Position::init();
 
-    UCIEngine uci(argc, argv);
+    auto uci = std::make_unique<UCIEngine>(argc, argv);
 
-    Tune::init(uci.engine_options());
+    Tune::init(uci->engine_options());
 
-    uci.loop();
+    uci->loop();
 
     return 0;
 }

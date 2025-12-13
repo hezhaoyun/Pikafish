@@ -32,6 +32,7 @@
 #include "bitboard.h"
 #include "misc.h"
 #include "movegen.h"
+#include "nnue/nnue_architecture.h"
 #include "tt.h"
 #include "uci.h"
 
@@ -548,6 +549,9 @@ DirtyPiece Position::do_move(Move                      m,
 
     // Update hash key
     k ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+    if (tt)
+        prefetch(tt->first_entry(adjust_key60(k)));
+
     // If the moving piece is a pawn, update pawn hash key.
     if (type_of(pc) == PAWN)
         st->pawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
@@ -567,11 +571,6 @@ DirtyPiece Position::do_move(Move                      m,
     dp.requires_refresh[them] |=
       (mid_mirror_before[1] != Eval::NNUE::FeatureSet::requires_mid_mirror(*this, them));
 
-    // Update the key with the final value
-    st->key = k;
-    if (tt)
-        prefetch(tt->first_entry(key()));
-
     // Set capture piece
     st->capturedPiece = captured;
 
@@ -583,6 +582,9 @@ DirtyPiece Position::do_move(Move                      m,
 
     // Update king attacks used for fast check detection
     set_check_info();
+
+    // Update the key with the final value
+    st->key = k;
 
     assert(pos_is_ok());
 
@@ -677,6 +679,8 @@ bool Position::see_ge(Move m, int threshold) const {
 
     Square from = m.from_sq(), to = m.to_sq();
 
+    assert(piece_on(from) != NO_PIECE);
+
     int swap = PieceValue[piece_on(to)] - threshold;
     if (swap < 0)
         return false;
@@ -691,10 +695,8 @@ bool Position::see_ge(Move m, int threshold) const {
     Bitboard attackers = attackers_to(to, occupied);
 
     // Flying general
-    if (attackers & pieces(stm, KING))
-        attackers |= attacks_bb<ROOK>(to, occupied & ~pieces(ROOK)) & pieces(~stm, KING);
-    if (attackers & pieces(~stm, KING))
-        attackers |= attacks_bb<ROOK>(to, occupied & ~pieces(ROOK)) & pieces(stm, KING);
+    if (attackers & pieces(KING))
+        attackers |= attacks_bb<ROOK>(to, occupied & ~pieces(ROOK)) & pieces(KING);
 
     Bitboard nonCannons = attackers & ~pieces(CANNON);
     Bitboard cannons    = attackers & pieces(CANNON);

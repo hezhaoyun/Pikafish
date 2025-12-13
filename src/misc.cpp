@@ -238,6 +238,9 @@ std::string compiler_info() {
 
     compiler += "\nCompilation settings       : ";
     compiler += (Is64Bit ? "64bit" : "32bit");
+#if defined(USE_AVX512ICL)
+    compiler += " AVX512ICL";
+#endif
 #if defined(USE_VNNI)
     compiler += " VNNI";
 #endif
@@ -531,7 +534,11 @@ std::stringstream read_compressed_nnue(const std::string& fpath) {
     if (!fin)
         return ss;
     std::vector<char> buffIn(ZSTD_DStreamInSize()), buffOut(ZSTD_DStreamOutSize());
-    ZSTD_DCtx* const  dctx = ZSTD_createDCtx();
+    auto              dctxDeleter = [&](auto* p) {
+        if (p)
+            ZSTD_freeDCtx(p);
+    };
+    std::unique_ptr<ZSTD_DCtx, decltype(dctxDeleter)> dctx = {ZSTD_createDCtx(), dctxDeleter};
     if (!dctx)
         return ss;
 
@@ -543,18 +550,13 @@ std::stringstream read_compressed_nnue(const std::string& fpath) {
         while (input.pos < input.size)
         {
             ZSTD_outBuffer output = {buffOut.data(), buffOut.size(), 0};
-            size_t const   ret    = ZSTD_decompressStream(dctx, &output, &input);
+            size_t const   ret    = ZSTD_decompressStream(dctx.get(), &output, &input);
             if (ZSTD_isError(ret))
-            {
-                ZSTD_freeDCtx(dctx);
                 return ss;
-            }
 
             ss.write(buffOut.data(), output.pos);
         }
     }
-
-    ZSTD_freeDCtx(dctx);
 
     return ss;
 }

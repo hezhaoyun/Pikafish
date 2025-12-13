@@ -8,9 +8,8 @@ on:
 jobs:
   linux:
     env:
-      COMPCXX: clang++
       COMP: clang
-      ARCH: x86-64-bw512
+      ARCH: x86-64-bmi2
     defaults:
       run:
         working-directory: src
@@ -19,23 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM and Clang
-        if: runner.os == 'Linux'
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod u+x llvm.sh
-          echo | sudo ./llvm.sh 20
-          rm llvm.sh
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 100
-          sudo update-alternatives --set clang++ /usr/bin/clang++-20
-
       - name: make
         run: |
-          make clean && make -j build ARCH=x86-64-bmi2 && make strip && mv pikafish pikafish-bmi2
           make clean && make -j build && make strip
 
       - name: upload to fishtest
         run: curl https://test.pikafish.org/api/pre_upload -F file=@pikafish -F "file_type=engine" -F "password=${{ secrets.NOTHING }}"
 
       - name: print variables table
-        run: printf 'quit' | ./pikafish-bmi2
+        run: printf 'quit' | ./pikafish

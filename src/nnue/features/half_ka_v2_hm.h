@@ -22,7 +22,9 @@
 #define NNUE_FEATURES_HALF_KA_V2_HM_H_INCLUDED
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <utility>
 
 #include "../../misc.h"
@@ -74,7 +76,7 @@ class HalfKAv2_hm {
     static constexpr std::uint32_t HashValue = 0xd17b100;
 
     // Number of feature dimensions
-    static constexpr IndexType Dimensions = 6 * 2 * 3 * static_cast<IndexType>(PS_NB);
+    static constexpr IndexType Dimensions = 6 * 4 * static_cast<IndexType>(PS_NB);
 
     // Get king_index and mirror information
     static constexpr auto KingBuckets = []() {
@@ -119,21 +121,7 @@ class HalfKAv2_hm {
         for (uint8_t rook = 0; rook <= 2; ++rook)
             for (uint8_t knight = 0; knight <= 2; ++knight)
                 for (uint8_t cannon = 0; cannon <= 2; ++cannon)
-                    v[rook][knight][cannon] = [&] {
-                        if (rook != 0)
-                            if (knight > 0 && cannon > 0)
-                                return 0;
-                            else if (rook == 2 || knight + cannon > 1)
-                                return 1;
-                            else
-                                return 2;
-                        else if (knight > 0 && cannon > 0)
-                            return 3;
-                        else if (knight + cannon > 1)
-                            return 4;
-                        else
-                            return 5;
-                    }();
+                    v[rook][knight][cannon] = bool(rook) * 2 + bool(knight + cannon);
         return v;
     }();
 
@@ -193,13 +181,13 @@ class HalfKAv2_hm {
         return v;
     }();
 
-    /* 64 bit encoding related to mid mirror, which is devided into two parts, pieces counts and squares except for king
+    /* 64 bit encoding related to mid mirror, which is divided into two parts, piece counts and squares except for king
     *
     *  Encoding representations:
     *    Middle king   : | 1 bit | -> Active when king in FILE_E
     *    Piece types   : |advisor|bishop| pawn |knight|cannon| rook |
     *    Piece counts  : | 3 bits|3 bits|4 bits|3 bits|3 bits|3 bits| -> 19 bits
-    *    Guarding bit  : | 1 bits| -> Set to one to prevent overflow from piece squares part into piece counts part
+    *    Guarding bit  : | 1 bit | -> Set to one to prevent overflow from piece squares part into piece counts part
     *    Piece squares : | 7 bits|7 bits|8 bits|7 bits|7 bits|7 bits| -> 43 bits
     *
     *  Piece counts for the left flank (i.e. FILE_A to FILE_D) of the board are 1, for the right flank (i.e. FILE_F to
@@ -224,14 +212,14 @@ class HalfKAv2_hm {
     *      Guarding bits : | 0|
     *      Piece squares : | 0| 0| 0| 0| 0|33|)
     *
-    *  Encoding for piece at FILE_E of the board is all zero, for example, the encoding of the some piece on square 'E3'
+    *  Encoding for piece at FILE_E of the board is all zero, for example, the encoding of some piece on square 'E3'
     *  is:
     *    Middle king   : | 0| (| 1| if the piece is king)
     *    Piece counts  : | 0| 0| 0| 0| 0| 0|
     *    Guarding bits : | 0|
     *    Piece squares : | 0| 0| 0| 0| 0| 0|
     *
-    *  The overall encoding of a balance position is (with the concept of complement numbers being used):
+    *  The overall encoding of a balanced position is (with the concept of complement numbers being used):
     *    Middle king   : | 1|
     *    Piece counts  : | 2| 2| 5| 2| 2| 2|
     *    Guarding bits : | 1|
@@ -241,10 +229,10 @@ class HalfKAv2_hm {
     *
     *  Each piece placed will add its encoding to the overall representation, and removing a piece will do a subtraction.
     *
-    *  Now we just need to test if the encoding of the board is smaller than balance position to see if we need mirroring:
-    *    If the piece count is imbalance for both flanks, the result will be fully decided by the first part of the
+    *  Now we just need to test if the encoding of the board is smaller than balanced position to see if we need mirroring:
+    *    If the piece count is imbalanced for both flanks, the result will be fully decided by the first part of the
     *    encoding, regardless of the second part and overflows.
-    *    If the piece count is balance, the first part of the encoding must be the same, and the result will be decided
+    *    If the piece count is balanced, the first part of the encoding must be the same, and the result will be decided
     *    by the second part, and all overflows of the second part will be automatically resolved at this time.
     */
     static constexpr auto MidMirrorEncoding = [] {

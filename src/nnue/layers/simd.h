@@ -16,8 +16,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef STOCKFISH_SIMD_H_INCLUDED
-#define STOCKFISH_SIMD_H_INCLUDED
+#ifndef PIKAFISH_SIMD_H_INCLUDED
+#define PIKAFISH_SIMD_H_INCLUDED
 
 #if defined(USE_AVX2)
     #include <immintrin.h>
@@ -141,4 +141,4 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
 #endif
 }
 
-#endif  // STOCKFISH_SIMD_H_INCLUDED
+#endif  // PIKAFISH_SIMD_H_INCLUDED
