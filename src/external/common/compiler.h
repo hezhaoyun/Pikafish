@@ -277,7 +277,13 @@
     #if defined(ZSTD_ARCH_X86_SSE2)
         #include <emmintrin.h>
     #elif defined(ZSTD_ARCH_ARM_NEON)
-        #include <arm_neon.h>
+        #if defined(__aarch64__)
+            #include <arm_neon.h>
+        #elif defined(__arm__) && defined(__ARM_NEON) && (defined(__ARM_FP) || defined(__ARM_PCS_VFP))
+            #include <arm_neon.h>
+        #else
+            #undef ZSTD_ARCH_ARM_NEON
+        #endif
     #endif
     #if defined(ZSTD_ARCH_ARM_SVE) || defined(ZSTD_ARCH_ARM_SVE2)
         #include <arm_sve.h>

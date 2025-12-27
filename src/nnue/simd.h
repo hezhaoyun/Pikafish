@@ -32,7 +32,13 @@
     #include <emmintrin.h>
 
 #elif defined(USE_NEON)
-    #include <arm_neon.h>
+    #if defined(__aarch64__)
+        #include <arm_neon.h>
+    #elif defined(__arm__) && defined(__ARM_NEON) && (defined(__ARM_FP) || defined(__ARM_PCS_VFP))
+        #include <arm_neon.h>
+    #else
+        #undef USE_NEON
+    #endif
 #endif
 
 #include "../types.h"
