@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -36,14 +36,14 @@
     #define IF_NOT_PEXT(...) __VA_ARGS__
 #endif
 
-namespace Stockfish {
+namespace Pikafish {
 
 namespace Bitboards {
 
 void        init();
 std::string pretty(Bitboard b);
 
-}  // namespace Stockfish::Bitboards
+}  // namespace Pikafish::Bitboards
 
 constexpr Bitboard Palace = Bitboard(0x70381CULL) << 64 | Bitboard(0xE07038ULL);
 
@@ -564,6 +564,6 @@ inline Bitboard unconstrained_attacks_bb(Square s) {
     }
 }
 
-}  // namespace Stockfish
+}  // namespace Pikafish
 
 #endif  // #ifndef BITBOARD_H_INCLUDED

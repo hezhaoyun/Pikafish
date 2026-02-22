@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -75,7 +75,7 @@ using GetThreadSelectedCpuSetMasks_t = BOOL (*)(HANDLE, PGROUP_AFFINITY, USHORT,
 
 #include "misc.h"
 
-namespace Stockfish {
+namespace Pikafish {
 
 using CpuIndex  = size_t;
 using NumaIndex = size_t;
@@ -527,7 +527,7 @@ using NumaAutoPolicy = std::variant<SystemNumaPolicy, L3DomainsPolicy, BundledL3
 //
 // We use startup affinities so as not to modify its own behaviour in time.
 //
-// Since Stockfish doesn't support exceptions all places where an exception
+// Since Pikafish doesn't support exceptions all places where an exception
 // should be thrown are replaced by std::exit.
 class NumaConfig {
    public:
@@ -608,7 +608,7 @@ class NumaConfig {
         // While Windows allows this to work now, such assignments have bad interaction
         // with the scheduler - in particular it still prefers scheduling on the thread's
         // "primary" node, even if it means scheduling SMT processors first.
-        // See https://github.com/official-stockfish/Stockfish/issues/5551
+        // See https://github.com/official-stockfish/Pikafish/issues/5551
         // See https://learn.microsoft.com/en-us/windows/win32/procthread/processor-groups
         //
         //     Each process is assigned a primary group at creation, and by default all
@@ -1712,7 +1712,7 @@ inline const NumaConfig& NumaReplicatedBase::get_numa_config() const {
     return context->get_numa_config();
 }
 
-}  // namespace Stockfish
+}  // namespace Pikafish
 
 
 #endif  // #ifndef NUMA_H_INCLUDED

@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -33,7 +33,7 @@
 #include "layers/sqr_clipped_relu.h"
 #include "nnue_common.h"
 
-namespace Stockfish::Eval::NNUE {
+namespace Pikafish::Eval::NNUE {
 
 // Input features used in evaluation function
 using ThreatFeatureSet = Features::FullThreats;
@@ -149,12 +149,12 @@ struct NetworkArchitecture {
     }
 };
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Pikafish::Eval::NNUE
 
-template<Stockfish::Eval::NNUE::IndexType L1, int L2, int L3>
-struct std::hash<Stockfish::Eval::NNUE::NetworkArchitecture<L1, L2, L3>> {
+template<Pikafish::Eval::NNUE::IndexType L1, int L2, int L3>
+struct std::hash<Pikafish::Eval::NNUE::NetworkArchitecture<L1, L2, L3>> {
     std::size_t
-    operator()(const Stockfish::Eval::NNUE::NetworkArchitecture<L1, L2, L3>& arch) const noexcept {
+    operator()(const Pikafish::Eval::NNUE::NetworkArchitecture<L1, L2, L3>& arch) const noexcept {
         return arch.get_content_hash();
     }
 };
