@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -113,7 +113,7 @@ template<typename Arch, typename Transformer>
 NetworkOutput
 Network<Arch, Transformer>::evaluate(const Position&                         pos,
                                      AccumulatorStack&                       accumulatorStack,
-                                     AccumulatorCaches::Cache<FTDimensions>* cache) const {
+                                     AccumulatorCaches::Cache<FTDimensions>& cache) const {
 
     constexpr uint64_t alignment = CacheLineSize;
 
@@ -122,7 +122,7 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int  bucket = FeatureSet::make_layer_stack_bucket(pos);
+    const int  bucket = PSQFeatureSet::make_layer_stack_bucket(pos);
     const auto psqt =
       featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
     const auto positional = network[bucket].propagate(transformedFeatures);
@@ -164,7 +164,7 @@ void Network<Arch, Transformer>::verify(std::string                             
     {
         size_t size = sizeof(featureTransformer) + sizeof(Arch) * LayerStacks;
         f("NNUE evaluation using " + evalfilePath + " (" + std::to_string(size / (1024 * 1024))
-          + "MiB, (" + std::to_string(featureTransformer.InputDimensions) + ", "
+          + "MiB, (" + std::to_string(featureTransformer.TotalInputDimensions) + ", "
           + std::to_string(network[0].TransformedFeatureDimensions) + ", "
           + std::to_string(network[0].FC_0_OUTPUTS) + ", " + std::to_string(network[0].FC_1_OUTPUTS)
           + ", 1))");
@@ -176,7 +176,7 @@ template<typename Arch, typename Transformer>
 NnueEvalTrace
 Network<Arch, Transformer>::trace_evaluate(const Position&                         pos,
                                            AccumulatorStack&                       accumulatorStack,
-                                           AccumulatorCaches::Cache<FTDimensions>* cache) const {
+                                           AccumulatorCaches::Cache<FTDimensions>& cache) const {
 
     constexpr uint64_t alignment = CacheLineSize;
 
@@ -186,7 +186,7 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
     NnueEvalTrace t{};
-    t.correctBucket = FeatureSet::make_layer_stack_bucket(pos);
+    t.correctBucket = PSQFeatureSet::make_layer_stack_bucket(pos);
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
         const auto materialist =

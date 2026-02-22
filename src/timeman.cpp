@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -92,7 +92,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
     // If less than one second, gradually reduce mtg
     if (scaledTime < 1000)
-        centiMTG = scaledTime * 6.000;
+        centiMTG = int(scaledTime * 6.000);
 
     // Make sure timeLeft is > 0 since we may use it as a divisor
     TimePoint timeLeft =
@@ -107,18 +107,18 @@ void TimeManagement::init(Search::LimitsType& limits,
     {
         // Extra time according to timeLeft
         if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3285 * std::log10(timeLeft) - 0.4830;
+            originalTimeAdjust = 0.3356 * std::log10(timeLeft) - 0.4903;
 
         // Calculate time constants based on current time left.
         double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.00344000 + 0.000200000 * logTimeInSec, 0.00450000);
-        double maxConstant  = std::max(3.9000 + 3.10000 * logTimeInSec, 2.50000);
+        double optConstant  = std::min(0.00340132 + 0.000206571 * logTimeInSec, 0.00453592);
+        double maxConstant  = std::max(3.7803 + 2.80028 * logTimeInSec, 2.54695);
 
-        optScale = std::min(0.0155000 + std::pow(ply + 3.00000, 0.450000) * optConstant,
-                            0.200000 * limits.time[us] / timeLeft)
+        optScale = std::min(0.0172436 + std::pow(ply + 2.71111, 0.434336) * optConstant,
+                            0.205771 * limits.time[us] / timeLeft)
                  * originalTimeAdjust;
 
-        maxScale = std::min(6.50000, maxConstant + ply / 13.6000);
+        maxScale = std::min(7.00188, maxConstant + ply / 13.1836);
     }
 
     // x moves in y seconds (+ z increment)
@@ -132,7 +132,7 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Limit the maximum possible time for this move
     optimumTime = TimePoint(optScale * timeLeft);
     maximumTime =
-      TimePoint(std::min(0.810000 * limits.time[us] - moveOverhead, maxScale * optimumTime)) - 10;
+      TimePoint(std::min(0.823706 * limits.time[us] - moveOverhead, maxScale * optimumTime)) - 10;
 
     if (options["Ponder"])
         optimumTime += optimumTime / 4;

@@ -25,6 +25,21 @@ ifeq ($(KERNEL),Linux)
 	OS := $(shell uname -o)
 endif
 
+### Command prefix to run the built executable (e.g. wine, sde, qemu)
+### Backward compatible alias: WINE_PATH (deprecated)
+ifneq ($(strip $(WINE_PATH)),)
+ifeq ($(strip $(RUN_PREFIX)),)
+RUN_PREFIX := $(WINE_PATH)
+endif
+ifeq ($(MAKELEVEL),0)
+ifneq ($(strip $(RUN_PREFIX)),$(strip $(WINE_PATH)))
+$(warning *** Both RUN_PREFIX and WINE_PATH are set; ignoring WINE_PATH. ***)
+else
+$(warning *** WINE_PATH is deprecated; use RUN_PREFIX instead. ***)
+endif
+endif
+endif
+
 ### Target Windows OS
 ifeq ($(OS),Windows_NT)
 	ifneq ($(COMP),ndk)
@@ -32,8 +47,8 @@ ifeq ($(OS),Windows_NT)
 	endif
 else ifeq ($(COMP),mingw)
 	target_windows = yes
-	ifeq ($(WINE_PATH),)
-		WINE_PATH := $(shell which wine)
+	ifeq ($(RUN_PREFIX),)
+		RUN_PREFIX := $(shell which wine)
 	endif
 endif
 
@@ -49,7 +64,7 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 ### Built-in benchmark for pgo-builds
-PGOBENCH = $(WINE_PATH) ./$(EXE) bench
+PGOBENCH = $(RUN_PREFIX) ./$(EXE) bench
 
 ### Source and object files
 SRCS = $(shell find . -name '*.cpp') $(shell find . -name '*.S')
@@ -87,7 +102,6 @@ VPATH = $(shell find . -type d | tr '\n' ':')
 # avx2 = yes/no       --- -mavx2             --- Use Intel Advanced Vector Extensions 2
 # avxvnni = yes/no    --- -mavxvnni          --- Use Intel Vector Neural Network Instructions AVX
 # avx512 = yes/no     --- -mavx512f          --- Use Intel Advanced Vector Extensions 512
-# avx512bw = yes/no   --- -mavx512bw         --- Use Intel Byte and Word Instructions 512
 # vnni512 = yes/no    --- -mavx512vnni       --- Use Intel Vector Neural Network Instructions 512
 # avx512icl = yes/no  --- ... multiple ...   --- Use All AVX-512 features available on both Intel Ice Lake and AMD Zen 4
 # altivec = yes/no    --- -maltivec          --- Use PowerPC Altivec SIMD extension
@@ -118,7 +132,7 @@ endif
 # explicitly check for the list of supported architectures (as listed with make help),
 # the user can override with `make ARCH=x86-64-avx512icl SUPPORTED_ARCH=true`
 ifeq ($(ARCH), $(filter $(ARCH), \
-                 x86-64-avx512icl x86-64-vnni512 x86-64-avx512bw x86-64-avx512 x86-64-avxvnni \
+                 x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
                  armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64 \
@@ -143,7 +157,6 @@ sse41 = no
 avx2 = no
 avxvnni = no
 avx512 = no
-avx512bw = no
 vnni512 = no
 avx512icl = no
 altivec = no
@@ -259,18 +272,6 @@ ifeq ($(findstring -avx512,$(ARCH)),-avx512)
 	avx512 = yes
 endif
 
-ifeq ($(findstring -avx512bw,$(ARCH)),-avx512bw)
-	popcnt = yes
-	sse = yes
-	sse2 = yes
-	ssse3 = yes
-	sse41 = yes
-	avx2 = yes
-	pext = yes
-	avx512 = yes
-	avx512bw = yes
-endif
-
 ifeq ($(findstring -vnni512,$(ARCH)),-vnni512)
 	popcnt = yes
 	sse = yes
@@ -280,7 +281,6 @@ ifeq ($(findstring -vnni512,$(ARCH)),-vnni512)
 	avx2 = yes
 	pext = yes
 	avx512 = yes
-	avx512bw = yes
 	vnni512 = yes
 endif
 
@@ -293,7 +293,6 @@ ifeq ($(findstring -avx512icl,$(ARCH)),-avx512icl)
 	avx2 = yes
 	pext = yes
 	avx512 = yes
-	avx512bw = yes
 	vnni512 = yes
 	avx512icl = yes
 endif
@@ -442,7 +441,7 @@ endif
 ifeq ($(COMP),gcc)
 	comp=gcc
 	CXX=g++
-	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations -Wstack-usage=128000
+	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations
 
 	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
 		ifeq ($(OS),Android)
@@ -506,7 +505,7 @@ ifeq ($(COMP),clang)
 	endif
 
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-prototypes \
-	            -Wconditional-uninitialized
+	            -Wconditional-uninitialized -flax-vector-conversions=none
 
 	ifeq ($(filter $(KERNEL),Darwin OpenBSD FreeBSD),)
 	ifeq ($(target_windows),)
@@ -613,6 +612,8 @@ ifeq ($(COMP),gcc)
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
+	else
+		CXXFLAGS += -Wstack-usage=128000
 	endif
 endif
 
@@ -728,14 +729,7 @@ endif
 ifeq ($(avx512),yes)
 	CXXFLAGS += -DUSE_AVX512
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mavx512f
-	endif
-endif
-
-ifeq ($(avx512bw),yes)
-	CXXFLAGS += -DUSE_AVX512BW
-	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mavx512bw
+		CXXFLAGS += -mavx512f -mavx512bw
 	endif
 endif
 
@@ -850,27 +844,40 @@ endif
 ### This is a mix of compile and link time options because the lto link phase
 ### needs access to the optimization flags.
 ifeq ($(optimize),yes)
-ifeq ($(debug), no)
+ifeq ($(debug),no)
+	ifneq ($(KERNEL),Darwin)
+		LLD_BIN := $(shell command -v ld.lld 2>/dev/null)
+		ifeq ($(LLD_BIN),)
+			LLD_BIN := $(shell command -v lld 2>/dev/null)
+		endif
+		ifneq ($(LLD_BIN),)
+			ifeq ($(comp),clang)
+				LDFLAGS += -fuse-ld=lld
+			else ifeq ($(comp),gcc)
+				ifneq ($(gccisclang),)
+					LDFLAGS += -fuse-ld=lld
+				endif
+			endif
+		endif
+	endif
+
 	ifeq ($(comp),$(filter $(comp),clang icx))
 		CXXFLAGS += -flto=full
 		ifeq ($(comp),icx)
 			CXXFLAGS += -fwhole-program-vtables
-                endif
-		ifeq ($(target_windows),yes)
-			CXXFLAGS += -fuse-ld=lld
 		endif
 		LDFLAGS += $(CXXFLAGS)
 
 # GCC and CLANG use different methods for parallelizing LTO and CLANG pretends to be
 # GCC on some systems.
 	else ifeq ($(comp),gcc)
-	ifeq ($(gccisclang),)
-		CXXFLAGS += -flto -flto-partition=one
-		LDFLAGS += $(CXXFLAGS) -flto=jobserver
-	else
-		CXXFLAGS += -flto=full
-		LDFLAGS += $(CXXFLAGS)
-	endif
+		ifeq ($(gccisclang),)
+			CXXFLAGS += -flto -flto-partition=one
+			LDFLAGS += $(CXXFLAGS) -flto=jobserver
+		else
+			CXXFLAGS += -flto=full
+			LDFLAGS += $(CXXFLAGS)
+		endif
 
 # To use LTO and static linking on Windows,
 # the tool chain requires gcc version 10.1 or later.
@@ -886,6 +893,13 @@ endif
 ifeq ($(OS), Android)
 	CXXFLAGS += -fPIE
 	LDFLAGS += -fPIE -pie
+endif
+
+### 3.11 Inline settings
+ifeq ($(optimize), yes)
+	ifeq ($(comp), clang)
+		CXXFLAGS += -Xclang -mllvm -Xclang -inline-threshold=500
+	endif
 endif
 
 ### ==========================================================================
@@ -913,7 +927,6 @@ help:
 	echo "native                  > select the best architecture for the host processor (default)" && \
 	echo "x86-64-avx512icl        > x86 64-bit with minimum avx512 support of Intel Ice Lake or AMD Zen 4" && \
 	echo "x86-64-vnni512          > x86 64-bit with vnni 512bit support" && \
-	echo "x86-64-avx512bw         > x86 64-bit with avx512bw support" && \
 	echo "x86-64-avx512           > x86 64-bit with avx512 support" && \
 	echo "x86-64-avxvnni          > x86 64-bit with vnni 256bit support" && \
 	echo "x86-64-bmi2             > x86 64-bit with bmi2 support" && \
@@ -1059,7 +1072,6 @@ config-sanity: net
 	echo "avx2: '$(avx2)'" && \
 	echo "avxvnni: '$(avxvnni)'" && \
 	echo "avx512: '$(avx512)'" && \
-	echo "avx512bw: '$(avx512bw)'" && \
 	echo "vnni512: '$(vnni512)'" && \
 	echo "avx512icl: '$(avx512icl)'" && \
 	echo "altivec: '$(altivec)'" && \
@@ -1096,7 +1108,6 @@ config-sanity: net
 	(test "$(sse41)" = "yes" || test "$(sse41)" = "no") && \
 	(test "$(avx2)" = "yes" || test "$(avx2)" = "no") && \
 	(test "$(avx512)" = "yes" || test "$(avx512)" = "no") && \
-	(test "$(avx512bw)" = "yes" || test "$(avx512bw)" = "no") && \
 	(test "$(vnni512)" = "yes" || test "$(vnni512)" = "no") && \
 	(test "$(avx512icl)" = "yes" || test "$(avx512icl)" = "no") && \
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \

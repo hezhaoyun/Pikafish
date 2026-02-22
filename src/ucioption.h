@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -47,10 +47,10 @@ class Option {
     Option(const char* v, const char* cur, OnChange = nullptr);
 
     Option& operator=(const std::string&);
-    operator int() const;
-    operator std::string() const;
-    bool operator==(const char*) const;
-    bool operator!=(const char*) const;
+            operator int() const;
+            operator std::string() const;
+    bool    operator==(const char*) const;
+    bool    operator!=(const char*) const;
 
     friend std::ostream& operator<<(std::ostream&, const OptionsMap&);
 

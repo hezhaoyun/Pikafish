@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,16 +26,19 @@
 #include <deque>
 #include <iosfwd>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 
 #include "bitboard.h"
+#include "misc.h"
 #include "nnue/features/half_ka_v2_hm.h"
 #include "types.h"
 
 namespace Pikafish {
 
 class TranspositionTable;
+struct SharedHistories;
 
 // StateInfo struct stores information needed to restore a Position object to
 // its previous state when we retract a move. Whenever a move is made on the
@@ -59,7 +62,7 @@ struct StateInfo {
     Bitboard   blockersForKing[COLOR_NB];
     Bitboard   pinners[COLOR_NB];
     Bitboard   checkSquares[PIECE_TYPE_NB];
-    bool       needSlowCheck;
+    bool       needFullCheck;
     Piece      capturedPiece;
     Move       move;
 };
@@ -94,10 +97,10 @@ class Position {
     Bitboard pieces(PieceTypes... pts) const;
     Bitboard pieces(Color c) const;
     template<typename... PieceTypes>
-    Bitboard     pieces(Color c, PieceTypes... pts) const;
-    Piece        piece_on(Square s) const;
-    const Piece* piece_array() const;
-    bool         empty(Square s) const;
+    Bitboard                            pieces(Color c, PieceTypes... pts) const;
+    Piece                               piece_on(Square s) const;
+    const std::array<Piece, SQUARE_NB>& piece_array() const;
+    bool                                empty(Square s) const;
     template<PieceType Pt>
     int count(Color c) const;
     template<PieceType Pt>
@@ -130,11 +133,17 @@ class Position {
     Piece captured_piece() const;
 
     // Doing and undoing moves
-    void       do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
-    DirtyPiece do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
-    void       undo_move(Move m);
-    void       do_null_move(StateInfo& newSt, const TranspositionTable& tt);
-    void       undo_null_move();
+    void do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
+    void do_move(Move                      m,
+                 StateInfo&                newSt,
+                 bool                      givesCheck,
+                 DirtyPiece&               dp,
+                 DirtyThreats&             dts,
+                 const TranspositionTable* tt,
+                 const SharedHistories*    worker);
+    void undo_move(Move m);
+    void do_null_move(StateInfo& newSt);
+    void undo_null_move();
 
     // Static Exchange Evaluation
     bool see_ge(Move m, int threshold = 0) const;
@@ -161,8 +170,9 @@ class Position {
 
     StateInfo* state() const;
 
-    void put_piece(Piece pc, Square s);
-    void remove_piece(Square s);
+    void put_piece(Piece pc, Square s, DirtyThreats* const dts = nullptr);
+    void remove_piece(Square s, DirtyThreats* const dts = nullptr);
+    void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
 
    private:
     // Initialization helpers (used while setting up a position)
@@ -170,7 +180,9 @@ class Position {
     void set_check_info() const;
 
     // Other helpers
-    void                  move_piece(Square from, Square to);
+    template<bool PutPiece, bool ComputeRay = true>
+    void                  update_piece_threats(Piece pc, Square s, DirtyThreats* const dts);
+    void                  move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
     std::pair<Piece, int> do_move(Move m);
     void                  undo_move(Move m, Piece captured, int id = 0);
     Value                 detect_chases(int d, int ply = 0);
@@ -178,10 +190,10 @@ class Position {
     Key                   adjust_key60(Key k) const;
 
     // Data members
-    Piece      board[SQUARE_NB];
-    Bitboard   byTypeBB[PIECE_TYPE_NB];
-    Bitboard   byColorBB[COLOR_NB];
-    Square     kingSquare[COLOR_NB];
+    std::array<Piece, SQUARE_NB>        board;
+    std::array<Bitboard, PIECE_TYPE_NB> byTypeBB;
+    std::array<Bitboard, COLOR_NB>      byColorBB;
+
     int        pieceCount[PIECE_NB];
     uint64_t   midEncoding[COLOR_NB];
     StateInfo* st;
@@ -193,6 +205,9 @@ class Position {
 
     // Board for chasing detection
     int idBoard[SQUARE_NB];
+
+    DirtyPiece   scratch_dp;
+    DirtyThreats scratch_dts;
 };
 
 std::ostream& operator<<(std::ostream& os, const Position& pos);
@@ -204,7 +219,7 @@ inline Piece Position::piece_on(Square s) const {
     return board[s];
 }
 
-inline const Piece* Position::piece_array() const { return board; }
+inline const std::array<Piece, SQUARE_NB>& Position::piece_array() const { return board; }
 
 inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
@@ -234,7 +249,10 @@ inline int Position::count() const {
     return count<Pt>(WHITE) + count<Pt>(BLACK);
 }
 
-inline Square Position::king_square(Color c) const { return kingSquare[c]; }
+inline Square Position::king_square(Color c) const {
+    return c == WHITE ? lsb(uint64_t(pieces(KING)))
+                      : Square(64 + lsb(uint64_t(pieces(KING) >> 64)));
+}
 
 inline uint64_t Position::mid_encoding(Color c) const { return midEncoding[c]; }
 
@@ -295,7 +313,7 @@ inline bool Position::capture(Move m) const {
 
 inline Piece Position::captured_piece() const { return st->capturedPiece; }
 
-inline void Position::put_piece(Piece pc, Square s) {
+inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
 
     board[s] = pc;
     byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
@@ -303,11 +321,18 @@ inline void Position::put_piece(Piece pc, Square s) {
     pieceCount[pc]++;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
     midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][s];
+
+    if (dts)
+        update_piece_threats<true>(pc, s, dts);
 }
 
-inline void Position::remove_piece(Square s) {
+inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
 
     Piece pc = board[s];
+
+    if (dts)
+        update_piece_threats<false>(pc, s, dts);
+
     byTypeBB[ALL_PIECES] ^= s;
     byTypeBB[type_of(pc)] ^= s;
     byColorBB[color_of(pc)] ^= s;
@@ -317,23 +342,43 @@ inline void Position::remove_piece(Square s) {
     midEncoding[color_of(pc)] -= Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][s];
 }
 
-inline void Position::move_piece(Square from, Square to) {
+inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts) {
 
     Piece    pc     = board[from];
     Bitboard fromTo = from | to;
+
+    if (dts)
+        update_piece_threats<false>(pc, from, dts);
+
     byTypeBB[ALL_PIECES] ^= fromTo;
     byTypeBB[type_of(pc)] ^= fromTo;
     byColorBB[color_of(pc)] ^= fromTo;
     board[from] = NO_PIECE;
     board[to]   = pc;
-    if (type_of(pc) == KING)
-        kingSquare[color_of(pc)] = to;
     midEncoding[color_of(pc)] -= Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][from];
     midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][to];
+
+    if (dts)
+        update_piece_threats<true>(pc, to, dts);
+}
+
+inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
+    Piece old = board[s];
+
+    remove_piece(s);
+
+    if (dts)
+        update_piece_threats<false, false>(old, s, dts);
+
+    put_piece(pc, s);
+
+    if (dts)
+        update_piece_threats<true, false>(pc, s, dts);
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {
-    do_move(m, newSt, gives_check(m), tt);
+    new (&scratch_dts) DirtyThreats;
+    do_move(m, newSt, gives_check(m), scratch_dp, scratch_dts, tt, nullptr);
 }
 
 inline StateInfo* Position::state() const { return st; }

@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@
     #include <cstddef>
     #include <cstdint>
     #include <type_traits>
+    #include "misc.h"
 
     #if defined(_MSC_VER)
         // Disable some silly and noisy warnings from MSVC compiler
@@ -214,13 +215,13 @@ struct Bitboard {
 constexpr int MAX_MOVES = 128;
 constexpr int MAX_PLY   = 246;
 
-enum Color : int8_t {
+enum Color : uint8_t {
     WHITE,
     BLACK,
     COLOR_NB = 2
 };
 
-enum Bound : int8_t {
+enum Bound : uint8_t {
     BOUND_NONE,
     BOUND_UPPER,
     BOUND_LOWER,
@@ -263,13 +264,13 @@ constexpr Value KnightValue  = 720;
 constexpr Value BishopValue  = 187;
 
 // clang-format off
-enum PieceType : std::int8_t {
+enum PieceType : std::uint8_t {
     NO_PIECE_TYPE, ROOK, ADVISOR, CANNON, PAWN, KNIGHT, BISHOP, KING, KNIGHT_TO, PAWN_TO,
     ALL_PIECES = 0,
     PIECE_TYPE_NB = 8
 };
 
-enum Piece : std::int8_t {
+enum Piece : std::uint8_t {
     NO_PIECE,
     W_ROOK           , W_ADVISOR, W_CANNON, W_PAWN, W_KNIGHT, W_BISHOP, W_KING,
     B_ROOK = ROOK + 8, B_ADVISOR, B_CANNON, B_PAWN, B_KNIGHT, B_BISHOP, B_KING,
@@ -301,7 +302,7 @@ constexpr Depth DEPTH_UNSEARCHED   = -2;
 constexpr Depth DEPTH_ENTRY_OFFSET = -3;
 
 // clang-format off
-enum Square : int8_t {
+enum Square : uint8_t {
     SQ_A0, SQ_B0, SQ_C0, SQ_D0, SQ_E0, SQ_F0, SQ_G0, SQ_H0, SQ_I0,
     SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1,
     SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2,
@@ -331,7 +332,7 @@ enum Direction : int8_t {
     NORTH_WEST = NORTH + WEST
 };
 
-enum File : int8_t {
+enum File : uint8_t {
     FILE_A,
     FILE_B,
     FILE_C,
@@ -344,7 +345,7 @@ enum File : int8_t {
     FILE_NB
 };
 
-enum Rank : int8_t {
+enum Rank : uint8_t {
     RANK_0,
     RANK_1,
     RANK_2,
@@ -378,6 +379,36 @@ struct DirtyPiece {
     Piece  remove_pc;
 
     bool requires_refresh[2];
+};
+
+// Keep track of what threats change on the board (used by NNUE)
+struct DirtyThreat {
+    DirtyThreat() { /* don't initialize data */ }
+    DirtyThreat(Piece pc, Piece threatened_pc, Square pc_sq, Square threatened_sq, bool add) {
+        data = (uint32_t(add) << 31) | (pc << 20) | (threatened_pc << 16) | (threatened_sq << 8)
+             | (pc_sq);
+    }
+
+    Piece  pc() const { return static_cast<Piece>(data >> 20 & 0xf); }
+    Piece  threatened_pc() const { return static_cast<Piece>(data >> 16 & 0xf); }
+    Square threatened_sq() const { return static_cast<Square>(data >> 8 & 0xff); }
+    Square pc_sq() const { return static_cast<Square>(data & 0xff); }
+    bool   add() const { return data >> 31; }
+
+   private:
+    uint32_t data;
+};
+
+using DirtyThreatList = ValueList<DirtyThreat, 64>;
+
+struct DirtyThreats {
+    DirtyThreatList list;
+    bool            requires_refresh[2];
+};
+
+struct DirtyBoardData {
+    DirtyPiece   dp;
+    DirtyThreats dts;
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \
@@ -469,7 +500,9 @@ class Move {
         return Square(data & 0x7F);
     }
 
-    constexpr int from_to() const { return data & 0x3FFF; }
+    // Same as to_sq() but without assertion, for branchless code paths
+    // where the result is masked/ignored when move is not ok
+    constexpr Square to_sq_unchecked() const { return Square(data & 0x7F); }
 
     constexpr bool is_ok() const { return none().data != data && null().data != data; }
 

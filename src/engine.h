@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,12 +22,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "history.h"
 #include "nnue/network.h"
 #include "numa.h"
 #include "position.h"
@@ -83,9 +86,9 @@ class Engine {
 
     // network related
 
-    void verify_networks() const;
-    void load_networks();
-    void load_big_network(const std::string& file);
+    void                                  verify_networks() const;
+    std::unique_ptr<Eval::NNUE::Networks> get_default_networks() const;
+    void                                  load_big_network(const std::string& file);
     void save_network(const std::pair<std::optional<std::string>, std::string> files);
 
     // utility functions
@@ -121,6 +124,7 @@ class Engine {
 
     Search::SearchManager::UpdateContext  updateContext;
     std::function<void(std::string_view)> onVerifyNetworks;
+    std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 
 }  // namespace Pikafish

@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,7 +28,6 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <utility>
 
 #include "../misc.h"
 #include "../types.h"
@@ -70,13 +69,13 @@ class Network {
 
     NetworkOutput evaluate(const Position&                         pos,
                            AccumulatorStack&                       accumulatorStack,
-                           AccumulatorCaches::Cache<FTDimensions>* cache) const;
+                           AccumulatorCaches::Cache<FTDimensions>& cache) const;
 
 
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
     NnueEvalTrace trace_evaluate(const Position&                         pos,
                                  AccumulatorStack&                       accumulatorStack,
-                                 AccumulatorCaches::Cache<FTDimensions>* cache) const;
+                                 AccumulatorCaches::Cache<FTDimensions>& cache) const;
 
    private:
     void load_user_net(const std::string&, const std::string&);
@@ -117,8 +116,8 @@ using NetworkBig = Network<BigNetworkArchitecture, BigFeatureTransformer>;
 
 
 struct Networks {
-    Networks(std::unique_ptr<NetworkBig>&& nB) :
-        big(std::move(*nB)) {}
+    Networks(EvalFile bigFile) :
+        big(bigFile) {}
 
     NetworkBig big;
 };

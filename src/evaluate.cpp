@@ -1,6 +1,6 @@
 /*
   Pikafish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Pikafish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -45,20 +45,20 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
 
     assert(!pos.checkers());
 
-    auto [psqt, positional] = networks.big.evaluate(pos, accumulators, &caches.big);
+    auto [psqt, positional] = networks.big.evaluate(pos, accumulators, caches.big);
 
     Value nnue = psqt + positional;
 
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 485;
-    nnue -= nnue * nnueComplexity / 11683;
+    optimism += optimism * nnueComplexity / 465;
+    nnue -= nnue * nnueComplexity / 11743;
 
     int material = pos.major_material();
-    int v        = (nnue * (17720 + material) + optimism * (3040 + material)) / 20120;
+    int v        = (nnue * (17380 + material) + optimism * (3061 + material)) / 20582;
 
     // Damp down the evaluation linearly when shuffling
-    v -= (v * pos.rule60_count()) / 267;
+    v -= (v * pos.rule60_count()) / 253;
 
     // Guarantee evaluation does not hit the mate range
     v = std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
@@ -84,7 +84,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
 
     ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-    auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, &caches->big);
+    auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches->big);
     Value v                 = psqt + positional;
     v                       = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
