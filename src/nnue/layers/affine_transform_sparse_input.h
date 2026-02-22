@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -35,7 +35,7 @@
   This file contains the definition for a fully connected layer (aka affine transform) with block sparse input.
 */
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace Pikafish::Eval::NNUE::Layers {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
 static constexpr int lsb_index64[64] = {
@@ -374,6 +374,6 @@ class AffineTransformSparseInput {
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
 };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace Pikafish::Eval::NNUE::Layers
 
 #endif  // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED

@@ -1,5 +1,5 @@
 /*
-  Pikafish, a UCI chess variant playing engine derived from Stockfish
+  Pikafish, a UCI chess variant playing engine derived from Pikafish
   Copyright (C) 2018-2022 PikaCat++
   Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace Pikafish {
 
 #define B(h, l) (Bitboard(h) << 64) ^ Bitboard(l)
 
@@ -399,6 +399,6 @@ constexpr Bitboard KnightToMagicsInit[SQUARE_NB] = {
 // clang-format on
 
 #undef B
-}  // namespace Stockfish
+}  // namespace Pikafish
 
 #endif  // #ifndef MAGICS_H_INCLUDED
