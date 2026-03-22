@@ -31,8 +31,10 @@ using namespace Pikafish;
 int engineMain(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
 
-    Bitboards::init();
-    Position::init();
+    // Note: Bitboards::init() and Position::init() are now called in pikafish_init()
+    // before the engine thread starts. This ensures the magic bitboard tables are
+    // initialized before any position operations occur, preventing crashes in
+    // attacks_bb() and set_check_info() during search.
 
     auto uci = std::make_unique<UCIEngine>(argc, argv);
 
