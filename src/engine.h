@@ -19,19 +19,21 @@
 #ifndef ENGINE_H_INCLUDED
 #define ENGINE_H_INCLUDED
 
-#include <cstddef>
-#include <cstdint>
 #include <functional>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "misc.h"
 #include "history.h"
 #include "nnue/network.h"
+#include "nnue/nnue_misc.h"
 #include "numa.h"
 #include "position.h"
 #include "search.h"
@@ -42,13 +44,16 @@
 
 namespace Pikafish {
 
+constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
+extern int    MaxThreads;
+
 class Engine {
    public:
     using InfoShort = Search::InfoShort;
     using InfoFull  = Search::InfoFull;
     using InfoIter  = Search::InfoIteration;
 
-    Engine(std::optional<std::string> path = std::nullopt);
+    Engine(std::optional<std::filesystem::path> path = std::nullopt);
 
     // Cannot be movable due to components holding backreferences to fields
     Engine(const Engine&)            = delete;
@@ -58,7 +63,7 @@ class Engine {
 
     ~Engine() { wait_for_search_finished(); }
 
-    std::uint64_t perft(const std::string& fen, Depth depth);
+    std::variant<u64, PositionSetError> perft(const std::string& fen, Depth depth);
 
     // non blocking call to start searching
     void go(Search::LimitsType&);
@@ -68,13 +73,14 @@ class Engine {
     // blocking call to wait for search to finish
     void wait_for_search_finished();
     // set a new position, moves are in UCI format
-    void set_position(const std::string& fen, const std::vector<std::string>& moves);
+    std::optional<PositionSetError> set_position(const std::string&              fen,
+                                                 const std::vector<std::string>& moves);
 
     // modifiers
 
-    void set_numa_config_from_option(const std::string& o);
+    bool set_numa_config_from_option(const std::string& o);
     void resize_threads();
-    void set_tt_size(size_t mb);
+    void set_tt_size(usize mb);
     void set_ponderhit(bool);
     void search_clear();
 
@@ -82,14 +88,15 @@ class Engine {
     void set_on_update_full(std::function<void(const InfoFull&)>&&);
     void set_on_iter(std::function<void(const InfoIter&)>&&);
     void set_on_bestmove(std::function<void(std::string_view, std::string_view)>&&);
-    void set_on_verify_networks(std::function<void(std::string_view)>&&);
+    void set_on_start(std::function<void()>&&);
+    void set_on_verify_network(std::function<void(std::string_view)>&&);
 
     // network related
 
-    void                                  verify_networks() const;
-    std::unique_ptr<Eval::NNUE::Networks> get_default_networks() const;
-    void                                  load_big_network(const std::string& file);
-    void save_network(const std::pair<std::optional<std::string>, std::string> files);
+    void                                 verify_network() const;
+    std::unique_ptr<Eval::NNUE::Network> get_default_network();
+    void                                 load_network(const std::filesystem::path& file);
+    void save_network(const std::optional<std::filesystem::path>& file);
 
     // utility functions
 
@@ -100,30 +107,31 @@ class Engine {
 
     int get_hashfull(int maxAge = 0) const;
 
-    std::string                            fen() const;
-    void                                   flip();
-    std::string                            visualize() const;
-    std::vector<std::pair<size_t, size_t>> get_bound_thread_count_by_numa_node() const;
-    std::string                            get_numa_config_as_string() const;
-    std::string                            numa_config_information_as_string() const;
-    std::string                            thread_allocation_information_as_string() const;
-    std::string                            thread_binding_information_as_string() const;
+    std::string                          fen() const;
+    std::optional<PositionSetError>      flip();
+    std::string                          visualize() const;
+    std::vector<std::pair<usize, usize>> get_bound_thread_count_by_numa_node() const;
+    std::string                          get_numa_config_as_string() const;
+    std::string                          numa_config_information_as_string() const;
+    std::string                          thread_allocation_information_as_string() const;
+    std::string                          thread_binding_information_as_string() const;
 
    private:
-    const std::string binaryDirectory;
+    const std::filesystem::path binaryDirectory;
 
     NumaReplicationContext numaContext;
 
     Position     pos;
     StateListPtr states;
 
-    OptionsMap                                         options;
-    ThreadPool                                         threads;
-    TranspositionTable                                 tt;
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
+    OptionsMap                                        options;
+    ThreadPool                                        threads;
+    TranspositionTable                                tt;
+    Eval::NNUE::EvalFile                              networkFile;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Network> network;
 
     Search::SearchManager::UpdateContext  updateContext;
-    std::function<void(std::string_view)> onVerifyNetworks;
+    std::function<void(std::string_view)> onVerifyNetwork;
     std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 

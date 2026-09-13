@@ -23,16 +23,20 @@
 #include <cassert>
 #include <cctype>
 #include <cstddef>
+#include <initializer_list>
 #include <cstring>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <string_view>
 #include <utility>
 
+#include "attacks.h"
 #include "bitboard.h"
 #include "history.h"
 #include "misc.h"
 #include "movegen.h"
+#include "nnue/nnue_common.h"
 #include "nnue/nnue_architecture.h"
 #include "tt.h"
 #include "uci.h"
@@ -40,6 +44,8 @@
 using std::string;
 
 namespace Pikafish {
+
+using namespace Attacks;
 
 namespace Zobrist {
 
@@ -97,9 +103,9 @@ void Position::init() {
 
 
 // Initializes the position object with the given FEN string.
-// This function is not very robust - make sure that input FENs are correct,
-// this is assumed to be the responsibility of the GUI.
-Position& Position::set(const string& fenStr, StateInfo* si) {
+// The FEN string is strictly validated; if it is invalid or inconsistent,
+// a PositionSetError describing the problem is returned, otherwise std::nullopt.
+std::optional<PositionSetError> Position::set(const string& fenStr, StateInfo* si) {
     /*
    A FEN string defines a particular position using only the ASCII character set.
 
@@ -125,39 +131,111 @@ Position& Position::set(const string& fenStr, StateInfo* si) {
 */
 
     unsigned char      token;
-    size_t             idx;
-    Square             sq = SQ_A9;
     std::istringstream ss(fenStr);
 
     std::memset(reinterpret_cast<char*>(this), 0, sizeof(Position));
-
-    midEncoding[WHITE] = midEncoding[BLACK] = Eval::NNUE::Features::HalfKAv2_hm::BalanceEncoding;
-
     std::memset(si, 0, sizeof(StateInfo));
     st = si;
 
+    midEncoding[WHITE] = midEncoding[BLACK] = Eval::NNUE::Features::HalfKAv2_hm::BalanceEncoding;
+
     ss >> std::noskipws;
 
+    int numPieces = 0;
+    int file      = FILE_A;
+    int rank      = RANK_9;
+
     // 1. Piece placement
-    while ((ss >> token) && !isspace(token))
+    for (;;)
     {
+        if (!(ss >> token))
+            return PositionSetError("Invalid FEN. Unexpected end of stream.");
+
+        if (isspace(token))
+            break;
+
         if (isdigit(token))
-            sq += (token - '0') * EAST;  // Advance the given number of files
-
-        else if (token == '/')
-            sq += 2 * SOUTH;
-
-        else if ((idx = PieceToChar.find(token)) != string::npos)
         {
+            const int diff = (token - '0');
+            if (diff < 1)
+                return PositionSetError("Invalid FEN. Invalid number of squares to skip.");
+
+            file += diff;
+            if (file > FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
+        }
+        else if (token == '/')
+        {
+            if (file != FILE_NB)
+                return PositionSetError(
+                  "Invalid FEN. Trying to end rank when not at the end of it.");
+
+            --rank;
+            file = FILE_A;
+
+            if (rank < RANK_0)
+                return PositionSetError("Invalid FEN. Invalid rank reached.");
+        }
+        else
+        {
+            if (file >= FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
+
+            const usize idx = PieceToChar.find(token);
+            if (idx == string::npos)
+                return PositionSetError(std::string("Invalid FEN. Invalid piece: ")
+                                        + std::string(1, token));
+
+            if (++numPieces > 32)
+                return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
+
+            const Square sq = make_square(File(file), Rank(rank));
             put_piece(Piece(idx), sq);
-            ++sq;
+
+            ++file;
+        }
+    }
+
+    if (rank != RANK_0 || file != FILE_NB)
+        return PositionSetError("Invalid FEN. Board state encoding ended but cursor not at end.");
+
+    if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1)
+        return PositionSetError("Unsupported position. Incorrect number of kings.");
+
+    const std::string PieceTypeToStr[PIECE_TYPE_NB] = {"",     "rook",   "advisor", "cannon",
+                                                       "pawn", "knight", "bishop",  "king"};
+    constexpr int     MaxPieces[PIECE_TYPE_NB - 1]  = {0, 2, 2, 2, 5, 2, 2};
+    for (Color c : {WHITE, BLACK})
+    {
+        for (PieceType pt = ROOK; pt < KING; ++pt)
+            if (popcount(pieces(c, pt)) > MaxPieces[pt])
+                return PositionSetError(std::string("Unsupported position. ")
+                                        + (c == WHITE ? "WHITE " : "BLACK ") + "has more than "
+                                        + std::to_string(MaxPieces[pt]) + " " + PieceTypeToStr[pt]
+                                        + "s.");
+
+        for (PieceType pt : {ADVISOR, PAWN, BISHOP, KING})
+        {
+            Bitboard valid = Eval::NNUE::Features::HalfKAv2_hm::ValidBB[make_piece(c, pt)];
+            // NNUE mirroring feature does not allow white king on the right flank, we allow here.
+            if (c == WHITE && pt == KING)
+                valid = HalfBB[WHITE] & Palace;
+            if (pieces(c, pt) & ~valid)
+                return PositionSetError(std::string("Unsupported position. ")
+                                        + (c == WHITE ? "WHITE " : "BLACK ") + PieceTypeToStr[pt]
+                                        + "(s) on invalid positions.");
         }
     }
 
     // 2. Active color
-    ss >> token;
+    if (!(ss >> token))
+        return PositionSetError("Invalid FEN. Unexpected end of stream.");
+    if (token != 'w' && token != 'b')
+        return PositionSetError(std::string("Invalid FEN. Invalid side to move: ")
+                                + std::string(1, token));
     sideToMove = (token == 'w' ? WHITE : BLACK);
-    ss >> token;
+    if (!(ss >> token) || !isspace(token) || ss.eof())
+        return PositionSetError("Invalid FEN. Expected whitespace after side to move.");
 
     while ((ss >> token) && !isspace(token))
         ;
@@ -168,15 +246,24 @@ Position& Position::set(const string& fenStr, StateInfo* si) {
     // 3-4. Halfmove clock and fullmove number
     ss >> std::skipws >> st->rule60 >> gamePly;
 
+    if (st->rule60 < 0 || st->rule60 > 119)
+        return PositionSetError("Unsupported position. Rule60 counter out of range.");
+
+    if (gamePly < 0 || gamePly > 100000)
+        return PositionSetError("Unsupported position. Game ply out of range.");
+
     // Convert from fullmove starting from 1 to gamePly starting from 0,
     // handle also common incorrect FEN with fullmove = 0.
     gamePly = std::max(2 * (gamePly - 1), 0) + (sideToMove == BLACK);
 
     set_state();
 
+    if (checkers_to(sideToMove, king_square(~sideToMove)))
+        return PositionSetError("Unsupported position. King can be captured.");
+
     assert(pos_is_ok());
 
-    return *this;
+    return std::nullopt;
 }
 
 
@@ -299,9 +386,9 @@ void Position::update_blockers() const {
     st->pinners[~c]        = 0;
 
     // Snipers are pieces that attack 's' when a piece and other pieces are removed
-    Bitboard snipers = ((attacks_bb<ROOK>(ksq) & (pieces(ROOK) | pieces(CANNON) | pieces(KING)))
-                        | (attacks_bb<KNIGHT>(ksq) & pieces(KNIGHT)))
-                     & pieces(~c);
+    Bitboard snipers   = ((attacks_bb<ROOK>(ksq) & (pieces(ROOK) | pieces(CANNON) | pieces(KING)))
+                          | (attacks_bb<KNIGHT>(ksq) & pieces(KNIGHT)))
+                       & pieces(~c);
     Bitboard occupancy = pieces() ^ (snipers & ~pieces(CANNON));
 
     while (snipers)
@@ -401,11 +488,22 @@ bool Position::pseudo_legal(const Move m) const {
 
     // Handle the special cases
     if (type_of(pc) == PAWN)
-        return bool(attacks_bb<PAWN>(from, us) & to);
+    {
+        if (!(attacks_bb<PAWN>(from, us) & to))
+            return false;
+    }
     else if (type_of(pc) == CANNON && !capture(m))
-        return bool(attacks_bb<ROOK>(from, pieces()) & to);
-    else
-        return bool(attacks_bb(type_of(pc), from, pieces()) & to);
+    {
+        if (!(attacks_bb<ROOK>(from, pieces()) & to))
+            return false;
+    }
+    else if (!(attacks_bb(type_of(pc), from, pieces()) & to))
+        return false;
+
+    if (checkers())
+        return MoveList<EVASIONS>(*this).contains(m);
+
+    return true;
 }
 
 
@@ -446,8 +544,7 @@ bool Position::gives_check(Move m) const {
 void Position::do_move(Move                      m,
                        StateInfo&                newSt,
                        bool                      givesCheck,
-                       DirtyPiece&               dp,
-                       DirtyThreats&             dts,
+                       Dirties&                  dirties,
                        const TranspositionTable* tt      = nullptr,
                        const SharedHistories*    history = nullptr) {
 
@@ -481,6 +578,9 @@ void Position::do_move(Move                      m,
     }
     ++st->pliesFromNull;
 
+    auto& dts = dirties.dirtyThreats;
+    auto& dp  = dirties.dirtyPiece;
+
     Color  us       = sideToMove;
     Color  them     = ~us;
     Square from     = m.from_sq();
@@ -495,16 +595,6 @@ void Position::do_move(Move                      m,
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == them);
     assert(type_of(captured) != KING);
-
-    bool mirror_before[2] = {
-      PSQFeatureSet::KingBuckets[king_square(us)][king_square(them)]
-                                [PSQFeatureSet::requires_mid_mirror(*this, us)]
-                                  .second,
-      PSQFeatureSet::KingBuckets[king_square(them)][king_square(us)]
-                                [PSQFeatureSet::requires_mid_mirror(*this, them)]
-                                  .second};
-    dp.requires_refresh[them] = false;
-    dp.requires_refresh[us]   = pc == make_piece(us, KING);
 
     if (captured)
     {
@@ -543,6 +633,8 @@ void Position::do_move(Move                      m,
     k ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
     if (tt)
         prefetch(tt->first_entry(adjust_key60(k)));
+    // Update the key with the final value
+    st->key = k;
 
     // If the moving piece is a pawn, update pawn hash key.
     if (type_of(pc) == PAWN)
@@ -563,6 +655,16 @@ void Position::do_move(Move                      m,
         prefetch(&history->nonpawn_correction_entry<WHITE>(*this));
         prefetch(&history->nonpawn_correction_entry<BLACK>(*this));
     }
+
+    bool mirror_before[2] = {
+      PSQFeatureSet::KingBuckets[king_square(us)][king_square(them)]
+                                [PSQFeatureSet::requires_mid_mirror(*this, us)]
+                                  .second,
+      PSQFeatureSet::KingBuckets[king_square(them)][king_square(us)]
+                                [PSQFeatureSet::requires_mid_mirror(*this, them)]
+                                  .second};
+    dp.requires_refresh[them] = false;
+    dp.requires_refresh[us]   = pc == make_piece(us, KING);
 
     if (captured)
     {
@@ -585,8 +687,8 @@ void Position::do_move(Move                      m,
       PSQFeatureSet::KingBuckets[king_square(them)][king_square(us)]
                                 [PSQFeatureSet::requires_mid_mirror(*this, them)]
                                   .second};
-    dp.requires_refresh[us] |= dts.requires_refresh[us]     = (mirror_before[0] != mirror_after[0]);
-    dp.requires_refresh[them] |= dts.requires_refresh[them] = (mirror_before[1] != mirror_after[1]);
+    dp.requires_refresh[us] |= (mirror_before[0] != mirror_after[0]);
+    dp.requires_refresh[them] |= (mirror_before[1] != mirror_after[1]);
 
     // Set capture piece
     st->capturedPiece = captured;
@@ -599,9 +701,6 @@ void Position::do_move(Move                      m,
 
     // Update king attacks used for fast check detection
     set_check_info();
-
-    // Update the key with the final value
-    st->key = k;
 
     assert(pos_is_ok());
 
@@ -644,16 +743,18 @@ void Position::undo_move(Move m) {
     assert(pos_is_ok());
 }
 
-
-template<bool PutPiece>
-inline void add_dirty_threat(
-  DirtyThreats* const dts, Piece pc, Piece threatened, Square s, Square threatenedSq) {
+inline void add_dirty_threat(DirtyThreats* const dts,
+                             bool                PutPiece,
+                             Piece               pc,
+                             Piece               threatened,
+                             Square              s,
+                             Square              threatenedSq) {
     dts->list.push_back({pc, threatened, s, threatenedSq, PutPiece});
 }
 
 
-template<bool PutPiece, bool ComputeRay>
-void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts) {
+template<bool ComputeRay>
+void Position::update_piece_threats(Piece pc, bool putPiece, Square s, DirtyThreats* const dts) {
     Bitboard occupied = pieces();
 
     const Bitboard rAttacks = attacks_bb<ROOK>(s, occupied);
@@ -688,7 +789,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
         assert(threatenedSq != s);
         assert(threatenedPc);
 
-        add_dirty_threat<PutPiece>(dts, pc, threatenedPc, s, threatenedSq);
+        add_dirty_threat(dts, putPiece, pc, threatenedPc, s, threatenedSq);
     }
 
     // Incoming threats
@@ -716,10 +817,10 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+                add_dirty_threat(dts, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
 
-            add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
+            add_dirty_threat(dts, putPiece, slider, pc, sliderSq, s);
         }
         // Cannons threat pieces on the other side
         sliders = cAttacks & pieces(CANNON);
@@ -736,10 +837,10 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+                add_dirty_threat(dts, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
 
-            add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
+            add_dirty_threat(dts, putPiece, slider, pc, sliderSq, s);
         }
         sliders = rAttacks & pieces(CANNON);
         while (sliders)
@@ -755,7 +856,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat<PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+                add_dirty_threat(dts, putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
 
             // Jumping over the first piece after 's'
@@ -766,7 +867,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+                add_dirty_threat(dts, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
         }
 
@@ -787,7 +888,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             {
                 const Square threatenedSq = pop_lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat<!PutPiece>(dts, leaper, threatenedPc, leaperSq, threatenedSq);
+                add_dirty_threat(dts, !putPiece, leaper, threatenedPc, leaperSq, threatenedSq);
             }
         }
     }
@@ -796,14 +897,29 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
 
     while (incoming_threats)
     {
-        Square src_sq = pop_lsb(incoming_threats);
-        Piece  src_pc = piece_on(src_sq);
+        Square srcSq = pop_lsb(incoming_threats);
+        Piece  srcPc = piece_on(srcSq);
 
-        assert(src_sq != s);
-        assert(src_pc != NO_PIECE);
+        assert(srcSq != s);
+        assert(srcPc != NO_PIECE);
 
-        add_dirty_threat<PutPiece>(dts, src_pc, pc, src_sq, s);
+        add_dirty_threat(dts, putPiece, srcPc, pc, srcSq, s);
     }
+}
+
+Key Position::prefetch_key(Move m) const {
+    Square from     = m.from_sq();
+    Square to       = m.to_sq();
+    Piece  pc       = piece_on(from);
+    Piece  captured = piece_on(to);
+    Key    k        = st->key ^ Zobrist::side;
+
+    k ^= Zobrist::psq[captured][to] ^ Zobrist::psq[pc][to] ^ Zobrist::psq[pc][from];
+
+    if (captured)
+        return k;
+
+    return adjust_key60<true>(k);
 }
 
 
@@ -825,6 +941,8 @@ void Position::do_null_move(StateInfo& newSt) {
     st->key ^= Zobrist::side;
 
     st->pliesFromNull = 0;
+
+    st->capturedPiece = NO_PIECE;
 
     sideToMove = ~sideToMove;
 
@@ -848,7 +966,7 @@ void Position::undo_null_move() {
 
 
 // Tests if the SEE (Static Exchange Evaluation)
-// value of move is greater or equal to the given threshold. We'll use an
+// value of the move is greater or equal to the given threshold. We'll use an
 // algorithm similar to alpha-beta pruning with a null window.
 bool Position::see_ge(Move m, int threshold) const {
 
@@ -1038,9 +1156,9 @@ bool Position::chase_legal(Move m) const {
 
 
 // Calculates the chase information for a given color.
-uint16_t Position::chased(Color c) {
+u16 Position::chased(Color c) {
 
-    uint16_t chase = 0;
+    u16 chase = 0;
 
     std::swap(c, sideToMove);
 
@@ -1070,8 +1188,8 @@ uint16_t Position::chased(Color c) {
                 if ((attackerType == KNIGHT || attackerType == CANNON)
                     && type_of(piece_on(to)) == ROOK)
                     chase |= (1 << idBoard[to]);
-                if ((attackerType == ADVISOR || attackerType == BISHOP)
-                    && type_of(piece_on(to)) & 1)
+                else if ((attackerType == ADVISOR || attackerType == BISHOP)
+                         && type_of(piece_on(to)) & 1)
                     chase |= (1 << idBoard[to]);
                 // Attacks against potentially unprotected pieces
                 else
@@ -1128,7 +1246,7 @@ Value Position::detect_chases(int d, int ply) {
     Color us = sideToMove, them = ~us;
 
     // Rollback until we reached st - d
-    uint16_t chase[COLOR_NB] = {0xFFFF, 0xFFFF};
+    u16 chase[COLOR_NB] = {0xFFFF, 0xFFFF};
     for (int i = 0; i < d; ++i)
     {
         if (st->checkersBB)
@@ -1142,7 +1260,7 @@ Value Position::detect_chases(int d, int ply) {
         }
         else
         {
-            uint16_t after = chased(~sideToMove);
+            u16 after = chased(~sideToMove);
             undo_move(st->move, st->capturedPiece);
             st = st->previous;
             // Take the exact diff to detect the chase
@@ -1302,7 +1420,7 @@ bool Position::rule_judge(Value& result, int ply) {
 
 // Flips position with the white and black sides reversed. This
 // is only useful for debugging e.g. for finding evaluation symmetry bugs.
-void Position::flip() {
+std::optional<PositionSetError> Position::flip() {
 
     string            f, token;
     std::stringstream ss(fen());
@@ -1323,7 +1441,7 @@ void Position::flip() {
     f += token + " ";
 
     std::transform(f.begin(), f.end(), f.begin(),
-                   [](char c) { return char(islower(c) ? toupper(c) : tolower(c)); });
+                   [](unsigned char c) { return char(islower(c) ? toupper(c) : tolower(c)); });
 
     ss >> token;
     f += token;
@@ -1331,9 +1449,7 @@ void Position::flip() {
     std::getline(ss, token);  // Half and full moves
     f += token;
 
-    set(f, st);
-
-    assert(pos_is_ok());
+    return set(f, st);
 }
 
 
@@ -1342,21 +1458,16 @@ void Position::flip() {
 // This is meant to be helpful when debugging.
 bool Position::pos_is_ok() const {
 
-    constexpr bool Fast = true;  // Quick (default) or full check?
-
     if ((sideToMove != WHITE && sideToMove != BLACK) || piece_on(king_square(WHITE)) != W_KING
         || piece_on(king_square(BLACK)) != B_KING)
         assert(0 && "pos_is_ok: Default");
 
-    if (Fast)
-        return true;
-
-    if (pieceCount[W_KING] != 1 || pieceCount[B_KING] != 1
+    if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1
         || checkers_to(sideToMove, king_square(~sideToMove)))
         assert(0 && "pos_is_ok: Kings");
 
     if ((pieces(WHITE, PAWN) & ~PawnBB[WHITE]) || (pieces(BLACK, PAWN) & ~PawnBB[BLACK])
-        || pieceCount[W_PAWN] > 5 || pieceCount[B_PAWN] > 5)
+        || count<PAWN>(WHITE) > 5 || count<PAWN>(BLACK) > 5)
         assert(0 && "pos_is_ok: Pawns");
 
     if ((pieces(WHITE) & pieces(BLACK)) || (pieces(WHITE) | pieces(BLACK)) != pieces()

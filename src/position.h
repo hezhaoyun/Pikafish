@@ -21,15 +21,17 @@
 
 #include <array>
 #include <cassert>
-#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <iosfwd>
 #include <memory>
 #include <new>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
+#include "attacks.h"
 #include "bitboard.h"
 #include "misc.h"
 #include "nnue/features/half_ka_v2_hm.h"
@@ -47,13 +49,13 @@ struct SharedHistories;
 struct StateInfo {
 
     // Copied when making a move
-    Key     pawnKey;
-    Key     minorPieceKey;
-    Key     nonPawnKey[COLOR_NB];
-    Value   majorMaterial[COLOR_NB];
-    int16_t check10[COLOR_NB];
-    int     rule60;
-    int     pliesFromNull;
+    Key   pawnKey;
+    Key   minorPieceKey;
+    Key   nonPawnKey[COLOR_NB];
+    Value majorMaterial[COLOR_NB];
+    i16   check10[COLOR_NB];
+    int   rule60;
+    int   pliesFromNull;
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
@@ -74,6 +76,12 @@ struct StateInfo {
 // elements are not invalidated upon list resizing.
 using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 
+// This error should be used whenever a position is suspected to be unsupported
+// by the engine. In particular positions that may cause hard errors like segmentation fault.
+struct PositionSetError: std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
 // Position class stores information regarding the board representation as
 // pieces, side to move, hash keys, etc. Important methods are
 // do_move() and undo_move(), used by the search to update node info when
@@ -87,9 +95,9 @@ class Position {
     Position& operator=(const Position&) = delete;
 
     // FEN string input/output
-    Position&   set(const std::string& fenStr, StateInfo* si);
-    Position&   set(const Position& pos, StateInfo* si);
-    std::string fen() const;
+    std::optional<PositionSetError> set(const std::string& fenStr, StateInfo* si);
+    std::optional<PositionSetError> set(const Position& pos, StateInfo* si);
+    std::string                     fen() const;
 
     // Position representation
     Bitboard pieces() const;  // All pieces
@@ -104,9 +112,9 @@ class Position {
     template<PieceType Pt>
     int count(Color c) const;
     template<PieceType Pt>
-    int      count() const;
-    Square   king_square(Color c) const;
-    uint64_t mid_encoding(Color c) const;
+    int    count() const;
+    Square king_square(Color c) const;
+    u64    mid_encoding(Color c) const;
 
     // Checking
     Bitboard checkers() const;
@@ -137,8 +145,7 @@ class Position {
     void do_move(Move                      m,
                  StateInfo&                newSt,
                  bool                      givesCheck,
-                 DirtyPiece&               dp,
-                 DirtyThreats&             dts,
+                 Dirties&                  dirties,
                  const TranspositionTable* tt,
                  const SharedHistories*    worker);
     void undo_move(Move m);
@@ -150,23 +157,24 @@ class Position {
 
     // Accessing hash keys
     Key key() const;
+    Key prefetch_key(Move m) const;
     Key pawn_key() const;
     Key minor_piece_key() const;
     Key defender_piece_key() const;
     Key non_pawn_key(Color c) const;
 
     // Other properties of the position
-    Color    side_to_move() const;
-    int      game_ply() const;
-    bool     rule_judge(Value& result, int ply = 0);
-    int      rule60_count() const;
-    uint16_t chased(Color c);
-    Value    major_material(Color c) const;
-    Value    major_material() const;
+    Color side_to_move() const;
+    int   game_ply() const;
+    bool  rule_judge(Value& result, int ply = 0);
+    int   rule60_count() const;
+    u16   chased(Color c);
+    Value major_material(Color c) const;
+    Value major_material() const;
 
     // Position consistency check, for debugging
-    bool pos_is_ok() const;
-    void flip();
+    bool                            pos_is_ok() const;
+    std::optional<PositionSetError> flip();
 
     StateInfo* state() const;
 
@@ -180,14 +188,15 @@ class Position {
     void set_check_info() const;
 
     // Other helpers
-    template<bool PutPiece, bool ComputeRay = true>
-    void                  update_piece_threats(Piece pc, Square s, DirtyThreats* const dts);
-    void                  move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
+    template<bool ComputeRay = true>
+    void update_piece_threats(Piece pc, bool putPiece, Square s, DirtyThreats* const dts);
+    void move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
     std::pair<Piece, int> do_move(Move m);
     void                  undo_move(Move m, Piece captured, int id = 0);
     Value                 detect_chases(int d, int ply = 0);
     bool                  chase_legal(Move m) const;
-    Key                   adjust_key60(Key k) const;
+    template<bool AfterMove = false>
+    Key adjust_key60(Key k) const;
 
     // Data members
     std::array<Piece, SQUARE_NB>        board;
@@ -195,7 +204,7 @@ class Position {
     std::array<Bitboard, COLOR_NB>      byColorBB;
 
     int        pieceCount[PIECE_NB];
-    uint64_t   midEncoding[COLOR_NB];
+    u64        midEncoding[COLOR_NB];
     StateInfo* st;
     int        gamePly;
     Color      sideToMove;
@@ -206,8 +215,7 @@ class Position {
     // Board for chasing detection
     int idBoard[SQUARE_NB];
 
-    DirtyPiece   scratch_dp;
-    DirtyThreats scratch_dts;
+    Dirties scratchDirties;
 };
 
 std::ostream& operator<<(std::ostream& os, const Position& pos);
@@ -250,11 +258,10 @@ inline int Position::count() const {
 }
 
 inline Square Position::king_square(Color c) const {
-    return c == WHITE ? lsb(uint64_t(pieces(KING)))
-                      : Square(64 + lsb(uint64_t(pieces(KING) >> 64)));
+    return c == WHITE ? lsb(u64(pieces(KING))) : Square(64 + lsb(u64(pieces(KING) >> 64)));
 }
 
-inline uint64_t Position::mid_encoding(Color c) const { return midEncoding[c]; }
+inline u64 Position::mid_encoding(Color c) const { return midEncoding[c]; }
 
 inline Bitboard Position::attackers_to(Square s) const { return attackers_to(s, pieces()); }
 
@@ -269,9 +276,9 @@ inline Bitboard Position::attacks_by(Color c) const {
     Bitboard attackers = pieces(c, Pt);
     while (attackers)
         if (Pt == PAWN)
-            threats |= attacks_bb<PAWN>(pop_lsb(attackers), c);
+            threats |= Attacks::attacks_bb<PAWN>(pop_lsb(attackers), c);
         else
-            threats |= attacks_bb<Pt>(pop_lsb(attackers), pieces());
+            threats |= Attacks::attacks_bb<Pt>(pop_lsb(attackers), pieces());
     return threats;
 }
 
@@ -285,9 +292,10 @@ inline Bitboard Position::check_squares(PieceType pt) const { return st->checkSq
 
 inline Key Position::key() const { return adjust_key60(st->key); }
 
+template<bool AfterMove>
 inline Key Position::adjust_key60(Key k) const {
-    return (st->rule60 < 14 ? k : k ^ make_key((st->rule60 - 14) / 8))
-         ^ (filter[st->key] ? make_key(14) : 0);
+    return (st->rule60 < (14 - AfterMove) ? k : k ^ make_key((st->rule60 - (14 - AfterMove)) / 8))
+         ^ (filter[k] ? make_key(14) : 0);
 }
 
 inline Key Position::pawn_key() const { return st->pawnKey; }
@@ -323,7 +331,7 @@ inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
     midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][s];
 
     if (dts)
-        update_piece_threats<true>(pc, s, dts);
+        update_piece_threats(pc, true, s, dts);
 }
 
 inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
@@ -331,7 +339,7 @@ inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
     Piece pc = board[s];
 
     if (dts)
-        update_piece_threats<false>(pc, s, dts);
+        update_piece_threats(pc, false, s, dts);
 
     byTypeBB[ALL_PIECES] ^= s;
     byTypeBB[type_of(pc)] ^= s;
@@ -348,7 +356,7 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     Bitboard fromTo = from | to;
 
     if (dts)
-        update_piece_threats<false>(pc, from, dts);
+        update_piece_threats(pc, false, from, dts);
 
     byTypeBB[ALL_PIECES] ^= fromTo;
     byTypeBB[type_of(pc)] ^= fromTo;
@@ -359,7 +367,7 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     midEncoding[color_of(pc)] += Eval::NNUE::Features::HalfKAv2_hm::MidMirrorEncoding[pc][to];
 
     if (dts)
-        update_piece_threats<true>(pc, to, dts);
+        update_piece_threats(pc, true, to, dts);
 }
 
 inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
@@ -368,29 +376,29 @@ inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
     remove_piece(s);
 
     if (dts)
-        update_piece_threats<false, false>(old, s, dts);
+        update_piece_threats<false>(old, false, s, dts);
 
     put_piece(pc, s);
 
     if (dts)
-        update_piece_threats<true, false>(pc, s, dts);
+        update_piece_threats<false>(pc, true, s, dts);
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {
-    new (&scratch_dts) DirtyThreats;
-    do_move(m, newSt, gives_check(m), scratch_dp, scratch_dts, tt, nullptr);
+    new (&scratchDirties.dirtyThreats) DirtyThreats;
+    do_move(m, newSt, gives_check(m), scratchDirties, tt, nullptr);
 }
 
 inline StateInfo* Position::state() const { return st; }
 
-inline Position& Position::set(const Position& pos, StateInfo* si) {
+inline std::optional<PositionSetError> Position::set(const Position& pos, StateInfo* si) {
 
-    set(pos.fen(), si);
+    auto err = set(pos.fen(), si);
 
     // Special cares for bloom filter
     std::memcpy(&filter, &pos.filter, sizeof(BloomFilter));
 
-    return *this;
+    return err;
 }
 
 }  // namespace Pikafish

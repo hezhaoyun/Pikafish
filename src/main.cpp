@@ -18,9 +18,9 @@
 
 #include <iostream>
 #include <memory>
-#include <string>
+#include <utility>
 
-#include "bitboard.h"
+#include "attacks.h"
 #include "misc.h"
 #include "position.h"
 #include "tune.h"
@@ -28,15 +28,22 @@
 
 using namespace Pikafish;
 
+#ifdef UNIVERSAL_BINARY
+namespace Pikafish {
+
+int engineMain(int argc, char* argv[]);  // silence 'no previous declaration'
+
+__attribute__((used))  // keep main alive
+#endif
+
 int engineMain(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
 
-    // Note: Bitboards::init() and Position::init() are now called in pikafish_init()
-    // before the engine thread starts. This ensures the magic bitboard tables are
-    // initialized before any position operations occur, preventing crashes in
-    // attacks_bb() and set_check_info() during search.
+    Attacks::init();
+    Position::init();
 
-    auto uci = std::make_unique<UCIEngine>(argc, argv);
+    auto cli = CommandLine(argc, argv);
+    auto uci = std::make_unique<UCIEngine>(std::move(cli));
 
     Tune::init(uci->engine_options());
 
@@ -44,3 +51,11 @@ int engineMain(int argc, char* argv[]) {
 
     return 0;
 }
+
+#ifdef UNIVERSAL_BINARY
+}  // namespace Pikafish
+
+    #ifdef UNIVERSAL_NEEDS_MAIN_SHIM
+int engineMain(int argc, char* argv[]) { return Pikafish::engineMain(argc, argv); }
+    #endif
+#endif
