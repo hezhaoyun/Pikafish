@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -58,13 +58,13 @@
     #define MADV_COLLAPSE 25
 #endif
 
-namespace Stockfish::shm {
+namespace Pikafish::shm {
 
 namespace detail {
 
 inline void* map_shared(int fd, usize size) noexcept {
 #if defined(__linux__) && !defined(__ANDROID__)
-    return Stockfish::mmap_huge_aligned(size, MAP_SHARED, fd);
+    return Pikafish::mmap_huge_aligned(size, MAP_SHARED, fd);
 #else
     return mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 #endif
@@ -603,6 +603,6 @@ template<typename T>
     return std::nullopt;
 }
 
-}  // namespace Stockfish::shm
+}  // namespace Pikafish::shm
 
 #endif  // #ifndef SHM_UNIX_H_INCLUDED

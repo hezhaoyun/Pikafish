@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -53,7 +53,7 @@
     #include <arm_neon.h>
 #endif
 
-namespace Stockfish::Eval::NNUE {
+namespace Pikafish::Eval::NNUE {
 
 using BiasType         = i16;
 using ThreatWeightType = i8;
@@ -347,6 +347,6 @@ inline void write_leb_128(std::ostream& stream, const std::array<IntType, Count>
     write_leb_128(stream, values.data(), Count);
 }
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Pikafish::Eval::NNUE
 
 #endif  // #ifndef NNUE_COMMON_H_INCLUDED
