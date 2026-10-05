@@ -129,7 +129,7 @@ NetworkOutput Network::evaluate(const Position&    pos,
 }
 
 
-void Network::verify(const std::function<void(std::string_view)>& f,
+bool Network::verify(const std::function<void(std::string_view)>& f,
                      const EvalFile&                              evalFile,
                      fs::path                                     evalfilePath) const {
     if (evalfilePath.empty())
@@ -149,7 +149,10 @@ void Network::verify(const std::function<void(std::string_view)>& f,
               "The default net can be downloaded from: "
               "https://github.com/official-pikafish/Networks/releases/download/master-net/"
               + std::string(evalFile.defaultName);
-            std::string msg5 = "The engine will be terminated now.";
+            // ⚠️ 嵌进 App 的形态里这里**不能** exit()：exit(EXIT_FAILURE) 会把整个宿主
+            // App 一起带走（真机表现：App 无声退场、浮窗消失但录屏还在、无崩溃报告）。
+            // 改为返回 false，调用方（Engine::go 等）中止搜索、发 nobestmove 收尾。
+            std::string msg5 = "The search will be aborted (network failed to load).";
 
             std::string msg = "ERROR: " + msg1 + '\n' + "ERROR: " + msg2 + '\n' + "ERROR: " + msg3
                             + '\n' + "ERROR: " + msg4 + '\n' + "ERROR: " + msg5 + '\n';
@@ -157,7 +160,7 @@ void Network::verify(const std::function<void(std::string_view)>& f,
             f(msg);
         }
 
-        exit(EXIT_FAILURE);
+        return false;
     }
 
     if (f)
@@ -170,6 +173,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
           + std::to_string(network[0].FC_0_OUTPUTS) + ", " + std::to_string(network[0].FC_1_OUTPUTS)
           + ", 1))");
     }
+
+    return true;
 }
 
 

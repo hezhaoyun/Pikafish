@@ -20,6 +20,7 @@
 #define MEMORY_H_INCLUDED
 
 #include <algorithm>
+#include "engine_fatal.h"
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -74,7 +75,7 @@ constexpr usize HugePageSize = usize(1) << 30;
 
 [[noreturn]] inline void report_failed_allocation(usize bytes) {
     std::cerr << "Failed to allocate " << bytes << " bytes." << std::endl;
-    std::exit(EXIT_FAILURE);
+    throw EngineFatalError("failed to allocate " + std::to_string(bytes) + " bytes");
 }
 
 void* std_aligned_alloc(usize alignment, usize size);

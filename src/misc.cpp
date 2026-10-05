@@ -17,6 +17,7 @@
 */
 
 #include "misc.h"
+#include "engine_fatal.h"
 
 #include <array>
 #include <atomic>
@@ -117,7 +118,7 @@ class Logger {
             if (!l.file.is_open())
             {
                 std::cerr << "Unable to open debug log file " << fname << std::endl;
-                exit(EXIT_FAILURE);
+                throw EngineFatalError("unable to open debug log file: " + fname.string());
             }
 
             std::cin.rdbuf(&l.in);

@@ -17,6 +17,7 @@
 */
 
 #include "uci.h"
+#include "engine_fatal.h"
 
 #include <algorithm>
 #include <cctype>
@@ -241,8 +242,11 @@ void UCIEngine::go(std::istringstream& is) {
 
     if (limits.perft)
         perft(limits);
-    else
-        engine.go(limits);
+    else if (!engine.go(limits))
+        // 网络没加载成功时 Engine::go 不开始搜索。这里补一个**终态**给客户端
+        // （Dart 侧把它当 NoBestmove 收掉），而不是让客户端空等看门狗。
+        // 嵌进 App 里，这一条绝不能走到 exit/abort —— 那是把宿主 App 一起带走。
+        sync_cout << "nobestmove" << sync_endl;
 }
 
 void UCIEngine::bench(std::istream& args) {
@@ -683,7 +687,7 @@ void UCIEngine::terminate_on_critical_error(const std::string& message) {
     sync_cout << "info string CRITICAL ERROR: Command `" << currentCmd
               << "` failed. Reason: " << message << '\n'
               << sync_endl;
-    std::exit(1);
+    throw EngineFatalError("command `" + currentCmd + "` failed: " + message);
 }
 
 }  // namespace Pikafish

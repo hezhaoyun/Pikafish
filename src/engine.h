@@ -65,8 +65,9 @@ class Engine {
 
     std::variant<u64, PositionSetError> perft(const std::string& fen, Depth depth);
 
-    // non blocking call to start searching
-    void go(Search::LimitsType&);
+    // non blocking call to start searching; returns false if the network could not be
+    // verified (see verify_network) — caller must not expect a bestmove in that case.
+    bool go(Search::LimitsType&);
     // non blocking call to stop searching
     void stop();
 
@@ -93,7 +94,8 @@ class Engine {
 
     // network related
 
-    void                                 verify_network() const;
+    // 返回 true = 网络加载成功、可以搜索；false = 未加载（调用方应中止搜索，绝不 exit）。
+    bool                                 verify_network() const;
     std::unique_ptr<Eval::NNUE::Network> get_default_network();
     void                                 load_network(const std::filesystem::path& file);
     void save_network(const std::optional<std::filesystem::path>& file);

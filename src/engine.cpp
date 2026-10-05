@@ -125,11 +125,13 @@ std::variant<u64, PositionSetError> Engine::perft(const std::string& fen, Depth 
     return Benchmark::perft(fen, depth);
 }
 
-void Engine::go(Search::LimitsType& limits) {
+bool Engine::go(Search::LimitsType& limits) {
     assert(limits.perft == 0);
-    verify_network();
+    if (!verify_network())
+        return false;  // 网络未加载：不开始搜索（否则 start_thinking 会用未初始化的网络）
 
     threads.start_thinking(pos, states, limits);
+    return true;
 }
 void Engine::stop() { threads.stop = true; }
 
@@ -235,9 +237,9 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 
 // network related
 
-void Engine::verify_network() const {
+bool Engine::verify_network() const {
     const auto file = path_from_utf8(std::string(options["EvalFile"]));
-    network->verify(onVerifyNetwork, networkFile, file);
+    const bool ok   = network->verify(onVerifyNetwork, networkFile, file);
 
     auto statuses = network.get_status_and_errors();
     for (usize i = 0; i < statuses.size(); ++i)
@@ -268,6 +270,8 @@ void Engine::verify_network() const {
 
         onVerifyNetwork(message);
     }
+
+    return ok;
 }
 
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() {
@@ -298,7 +302,8 @@ void Engine::trace_eval() const {
     Position     p;
     p.set(pos.fen(), &trace_states->back());
 
-    verify_network();
+    if (!verify_network())
+        return;  // 网络未加载：trace 会用未初始化的网络
 
     sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
 }

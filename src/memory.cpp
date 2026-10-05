@@ -17,6 +17,7 @@
 */
 
 #include "memory.h"
+#include "engine_fatal.h"
 
 #include <cstdlib>
 #include <iostream>  // std::cerr
@@ -241,7 +242,7 @@ void aligned_large_pages_free(void* mem) {
         DWORD err = GetLastError();
         std::cerr << "Failed to free large page memory. Error code: 0x" << std::hex << err
                   << std::dec << std::endl;
-        exit(EXIT_FAILURE);
+        throw EngineFatalError("failed to free large page memory");
     }
 }
 
@@ -259,7 +260,7 @@ void aligned_large_pages_free(void* mem) {
             if (munmap(mem, it->second) != 0)
             {
                 std::cerr << "munmap failed: " << strerror(errno) << std::endl;
-                exit(EXIT_FAILURE);
+                throw EngineFatalError("munmap failed: " + std::string(strerror(errno)));
             }
             large_page_sizes.erase(it);
             return;

@@ -17,6 +17,7 @@
 */
 
 #include "thread.h"
+#include "engine_fatal.h"
 
 #include <algorithm>
 #include <cassert>
@@ -61,7 +62,7 @@ Thread::Thread(Search::SharedState&                   sharedState,
     if (!stdThread.joinable())
     {
         std::cerr << "Failed to create search thread\n";
-        std::exit(EXIT_FAILURE);
+        throw EngineFatalError("failed to create search thread");
     }
 
     wait_for_search_finished();

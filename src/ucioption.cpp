@@ -17,6 +17,7 @@
 */
 
 #include "ucioption.h"
+#include "engine_fatal.h"
 
 #include <algorithm>
 #include <cassert>
@@ -79,7 +80,7 @@ void OptionsMap::add(const std::string& name, const Option& option) {
     else
     {
         std::cerr << "Option \"" << name << "\" was already added!" << std::endl;
-        std::exit(EXIT_FAILURE);
+        throw EngineFatalError("option \"" + name + "\" was already added");
     }
 }
 

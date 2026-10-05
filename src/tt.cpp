@@ -17,6 +17,7 @@
 */
 
 #include "tt.h"
+#include "engine_fatal.h"
 
 #include <algorithm>
 #include <cassert>
@@ -192,7 +193,7 @@ void TranspositionTable::resize(usize mbSize, ThreadPool& threads) {
     if (!table)
     {
         std::cerr << "Failed to allocate " << mbSize << "MB for transposition table." << std::endl;
-        exit(EXIT_FAILURE);
+        throw EngineFatalError("failed to allocate transposition table");
     }
 
     clear(threads);

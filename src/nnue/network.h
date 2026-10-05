@@ -70,7 +70,10 @@ class Network {
                            AccumulatorCaches& cache) const;
 
 
-    void verify(const std::function<void(std::string_view)>& f,
+    // 返回 true = 网络确实加载成功（evalFile.current 与要求的一致）。
+    // 嵌进 App 的形态里**绝不能在这里 exit()**：exit(EXIT_FAILURE) 会把整个宿主进程带走
+    // （真机表现：App 无声退场、无崩溃报告），所以失败只返回 false，由调用方中止搜索。
+    bool verify(const std::function<void(std::string_view)>& f,
                 const EvalFile&                              evalFile,
                 std::filesystem::path                        evalfilePath) const;
 
