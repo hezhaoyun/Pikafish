@@ -236,6 +236,18 @@ Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
     return limits;
 }
 
+/// **本地补丁的活性标记**（见 `pikafish_engine/docs/engine-maintenance.md` ①）。
+///
+/// 插件侧（`pikafish_ffi.cpp`，那是**我们自己的文件**，上游永远覆盖不到）会引用这个符号 ——
+/// 一旦升级合并把这一带的补丁冲掉，这里就找不到定义，**整个 App 直接链接失败**，
+/// 而不是静默发一版"引擎又变回 `exit()`、浮窗又开始无声消失"的包。
+///
+/// 它故意挨着下面的 `UCIEngine::go`：那一处正是补丁 B 的正文，上游一旦改动这一带、
+/// `-X theirs` 把这块判给上游，标记会跟着一起消失 —— 守卫也就在该响的时候响。
+///
+/// ⚠️ 它**不是逻辑判断**（恒为 `true`）：作用只是"让链接器必须解析一个只有补丁才提供的符号"。
+bool embeddedPatchesIntact() { return true; }
+
 void UCIEngine::go(std::istringstream& is) {
 
     Search::LimitsType limits = parse_limits(is);
