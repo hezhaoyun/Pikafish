@@ -195,7 +195,14 @@ enum SyncCout {
 };
 std::ostream& operator<<(std::ostream&, SyncCout);
 
-#define sync_cout std::cout << IO_LOCK
+// 引擎级独立 IO 注入点（双引擎常驻）：引擎不直接读写进程级 std::cin/std::cout
+// （它们绑定 fd0/fd1 —— 两个引擎同时 dup2 到 fd0/fd1 会互相覆盖，导致命令串流、
+// 中象 FEN 被国象读到而崩溃）。FFI 侧把各自管道 fd 绑定的流注入这里；
+// 默认绑标准流，保持 CLI 独立运行兼容。
+extern std::istream* engine_in;
+extern std::ostream* engine_out;
+
+#define sync_cout (*Pikafish::engine_out) << IO_LOCK
 #define sync_endl std::endl << IO_UNLOCK
 
 void sync_cout_start();

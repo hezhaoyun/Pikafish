@@ -92,8 +92,8 @@ struct Tie: public std::streambuf {  // MSVC requires split streambuf for cin an
 class Logger {
 
     Logger() :
-        in(std::cin.rdbuf(), file.rdbuf()),
-        out(std::cout.rdbuf(), file.rdbuf()) {}
+        in(engine_in->rdbuf(), file.rdbuf()),
+        out(engine_out->rdbuf(), file.rdbuf()) {}
     ~Logger() { start(""); }
 
     std::ofstream file;
@@ -106,8 +106,8 @@ class Logger {
 
         if (l.file.is_open())
         {
-            std::cout.rdbuf(l.out.buf);
-            std::cin.rdbuf(l.in.buf);
+            engine_out->rdbuf(l.out.buf);
+            engine_in->rdbuf(l.in.buf);
             l.file.close();
         }
 
@@ -121,13 +121,17 @@ class Logger {
                 throw EngineFatalError("unable to open debug log file: " + fname.string());
             }
 
-            std::cin.rdbuf(&l.in);
-            std::cout.rdbuf(&l.out);
+            engine_in->rdbuf(&l.in);
+            engine_out->rdbuf(&l.out);
         }
     }
 };
 
 }  // namespace
+
+// 引擎级独立 IO 注入点的默认值：绑标准流，CLI 独立运行不变；FFI 启动引擎线程时替换成管道流。
+std::istream* engine_in  = &std::cin;
+std::ostream* engine_out = &std::cout;
 
 
 // Returns the full name of the current Pikafish version.
@@ -460,8 +464,8 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
     return os;
 }
 
-void sync_cout_start() { std::cout << IO_LOCK; }
-void sync_cout_end() { std::cout << IO_UNLOCK; }
+void sync_cout_start() { (*engine_out) << IO_LOCK; }
+void sync_cout_end() { (*engine_out) << IO_UNLOCK; }
 
 // Hash function based on public domain MurmurHash64A, by Austin Appleby.
 u64 hash_bytes(const char* data, usize size) {

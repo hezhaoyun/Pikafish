@@ -37,7 +37,7 @@ __attribute__((used))  // keep main alive
 #endif
 
 int engineMain(int argc, char* argv[]) {
-    std::cout << engine_info() << std::endl;
+    (*engine_out) << engine_info() << std::endl;
 
     Attacks::init();
     Position::init();
