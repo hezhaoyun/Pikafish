@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <initializer_list>
 #include <iterator>
 #include <optional>
 #include <sstream>
@@ -232,6 +233,11 @@ Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
         if (is.fail())
             terminate_on_critical_error("Invalid argument for '" + token + "'");
     }
+
+    // Sanitize negative time values, zero for stm means no TM
+    for (auto* t : {&limits.time[WHITE], &limits.time[BLACK], &limits.movetime})
+        if (*t < 0)
+            *t = 1;
 
     return limits;
 }
@@ -510,8 +516,6 @@ u64 UCIEngine::perft(const Search::LimitsType& limits) {
 }
 
 void UCIEngine::position(std::istringstream& is) {
-    const std::string fullCommand = is.str();
-
     std::string token, fen;
 
     is >> token;
@@ -641,7 +645,7 @@ std::string UCIEngine::to_lower(std::string str) {
 }
 
 Move UCIEngine::to_move(const Position& pos, std::string str) {
-    for (const auto& m : MoveList<LEGAL>(pos))
+    for (const auto& m : MoveList<ALL>(pos))
         if (str == move(m))
             return m;
 

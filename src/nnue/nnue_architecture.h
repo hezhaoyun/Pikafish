@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <iosfwd>
 
-#include "features/half_ka_v2_hm.h"
+#include "features/k6h4.h"
 #include "features/full_threats.h"
 #include "layers/affine_transform.h"
 #include "layers/affine_transform_sparse_input.h"
@@ -37,22 +37,14 @@ namespace Pikafish::Eval::NNUE {
 
 // Input features used in evaluation function
 using ThreatFeatureSet = Features::FullThreats;
-using PSQFeatureSet    = Features::HalfKAv2_hm;
+using PSQFeatureSet    = Features::K6H4;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType PSQTBuckets = 16;
-constexpr IndexType LayerStacks = 16;
-
-// If vector instructions are enabled, we update and refresh the
-// accumulator tile by tile such that each tile fits in the CPU's
-// vector registers.
-static_assert(
-  PSQTBuckets % 16 == 0,
-  "Per feature PSQT values cannot be processed at granularity lower than 16 at a time.");
+constexpr IndexType LayerStacks = 32;
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;

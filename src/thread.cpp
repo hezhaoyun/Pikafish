@@ -55,7 +55,6 @@ Thread::Thread(Search::SharedState&                   sharedState,
     idx(n),
     idxInNuma(numaN),
     totalNuma(totalNumaCount),
-    nthreads(sharedState.options["Threads"]),
     stdThread(
       create_native_thread(NativeThreadOptions{}.setLargeStack(true), &Thread::idle_loop, this)) {
 
@@ -310,7 +309,7 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& states, Search::Lim
     }
 
     if (rootMoves.empty())
-        for (const auto& m : MoveList<LEGAL>(pos))
+        for (const auto& m : MoveList<ALL>(pos))
             rootMoves.emplace_back(m);
 
     // After ownership transfer 'states' becomes empty, so if we stop the search

@@ -105,7 +105,7 @@ void std_aligned_free(void* ptr) {
 
 static void* aligned_large_pages_alloc_windows([[maybe_unused]] usize allocSize) {
 
-    return windows_try_with_large_page_priviliges(
+    return windows_try_with_large_page_privileges(
       [&](usize largePageSize) {
           // Round up size to full pages and allocate
           allocSize = (allocSize + largePageSize - 1) & ~usize(largePageSize - 1);
@@ -176,9 +176,7 @@ void* aligned_large_pages_alloc_with_hint(usize allocSize, [[maybe_unused]] bool
         large_page_sizes[mem] = size;
     }
     else
-    {
         mem = nullptr;
-    }
     return mem;
     #else
     constexpr usize alignment = 4096;  // small page size assumed
@@ -205,9 +203,7 @@ bool has_large_pages() {
     constexpr usize page_size = 2 * 1024 * 1024;  // 2MB page size assumed
     void*           mem       = aligned_large_pages_alloc_windows(page_size);
     if (mem == nullptr)
-    {
         return false;
-    }
     else
     {
         aligned_large_pages_free(mem);

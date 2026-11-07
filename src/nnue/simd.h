@@ -55,15 +55,23 @@ namespace Pikafish::Eval::NNUE::SIMD {
     #define USE_PAIR_ACTIVATIONS
 #endif
 
+// On x86 with SSSE3 or better, two int8 weight rows can be widened and summed
+// into int16 lanes with one unpack + one maddubs (against a vector of ones)
+// instead of one sign-extension per row. See apply_feature_pair() in
+// nnue_accumulator.cpp and FeatureTransformer::WideningPairOrder.
+// Not used on wasm: emscripten emulates maddubs with several instructions.
+#if defined(USE_SSSE3) && !defined(__wasm__)
+    #define USE_PAIRED_WIDENING_ADD
+#endif
+
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's
 // vector registers.
 #define VECTOR
 
 #ifdef USE_AVX512
-using vec_t      = __m512i;
-using vec_i8_t   = __m256i;
-using psqt_vec_t = __m512i;
+using vec_t    = __m512i;
+using vec_i8_t = __m256i;
     #define vec_load(a) _mm512_load_si512(a)
     #define vec_store(a, b) _mm512_store_si512(a, b)
     #define vec_convert_8_16(a) _mm512_cvtepi8_epi16(a)
@@ -75,13 +83,13 @@ using psqt_vec_t = __m512i;
     #define vec_max_16(a, b) _mm512_max_epi16(a, b)
     #define vec_min_16(a, b) _mm512_min_epi16(a, b)
     #define vec_slli_16(a, b) _mm512_slli_epi16(a, b)
+    #define vec_srai_16(a, b) _mm512_srai_epi16(a, b)
     // Inverse permuted at load time
     #define vec_packus_16(a, b) _mm512_packus_epi16(a, b)
-    #define vec_load_psqt(a) _mm512_load_si512(a)
-    #define vec_store_psqt(a, b) _mm512_store_si512(a, b)
-    #define vec_add_psqt_32(a, b) _mm512_add_epi32(a, b)
-    #define vec_sub_psqt_32(a, b) _mm512_sub_epi32(a, b)
-    #define vec_zero_psqt() _mm512_setzero_epi32()
+    #define vec_set_8(a) _mm512_set1_epi8(a)
+    #define vec_unpacklo_8(a, b) _mm512_unpacklo_epi8(a, b)
+    #define vec_unpackhi_8(a, b) _mm512_unpackhi_epi8(a, b)
+    #define vec_maddubs_16(a, b) _mm512_maddubs_epi16(a, b)
 
     #define vec_nnz(a) _mm512_cmpgt_epi32_mask(a, _mm512_setzero_si512())
 
@@ -89,9 +97,8 @@ using psqt_vec_t = __m512i;
     #define MaxChunkSize 64
 
 #elif USE_AVX2
-using vec_t      = __m256i;
-using vec_i8_t   = __m128i;
-using psqt_vec_t = __m256i;
+using vec_t    = __m256i;
+using vec_i8_t = __m128i;
     #define vec_load(a) _mm256_load_si256(a)
     #define vec_store(a, b) _mm256_store_si256(a, b)
     #define vec_convert_8_16(a) _mm256_cvtepi8_epi16(a)
@@ -103,13 +110,13 @@ using psqt_vec_t = __m256i;
     #define vec_max_16(a, b) _mm256_max_epi16(a, b)
     #define vec_min_16(a, b) _mm256_min_epi16(a, b)
     #define vec_slli_16(a, b) _mm256_slli_epi16(a, b)
+    #define vec_srai_16(a, b) _mm256_srai_epi16(a, b)
     // Inverse permuted at load time
     #define vec_packus_16(a, b) _mm256_packus_epi16(a, b)
-    #define vec_load_psqt(a) _mm256_load_si256(a)
-    #define vec_store_psqt(a, b) _mm256_store_si256(a, b)
-    #define vec_add_psqt_32(a, b) _mm256_add_epi32(a, b)
-    #define vec_sub_psqt_32(a, b) _mm256_sub_epi32(a, b)
-    #define vec_zero_psqt() _mm256_setzero_si256()
+    #define vec_set_8(a) _mm256_set1_epi8(a)
+    #define vec_unpacklo_8(a, b) _mm256_unpacklo_epi8(a, b)
+    #define vec_unpackhi_8(a, b) _mm256_unpackhi_epi8(a, b)
+    #define vec_maddubs_16(a, b) _mm256_maddubs_epi16(a, b)
 
     #define vec_nnz(a) \
         _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(a, _mm256_setzero_si256())))
@@ -118,9 +125,8 @@ using psqt_vec_t = __m256i;
     #define MaxChunkSize 32
 
 #elif USE_SSE2
-using vec_t      = __m128i;
-using vec_i8_t   = u64;
-using psqt_vec_t = __m128i;
+using vec_t    = __m128i;
+using vec_i8_t = u64;
     #define vec_load(a) (*(a))
     #define vec_store(a, b) *(a) = (b)
     #define vec_add_16(a, b) _mm_add_epi16(a, b)
@@ -131,14 +137,14 @@ using psqt_vec_t = __m128i;
     #define vec_max_16(a, b) _mm_max_epi16(a, b)
     #define vec_min_16(a, b) _mm_min_epi16(a, b)
     #define vec_slli_16(a, b) _mm_slli_epi16(a, b)
+    #define vec_srai_16(a, b) _mm_srai_epi16(a, b)
     #define vec_packus_16(a, b) _mm_packus_epi16(a, b)
-    #define vec_load_psqt(a) (*(a))
-    #define vec_store_psqt(a, b) *(a) = (b)
-    #define vec_add_psqt_32(a, b) _mm_add_epi32(a, b)
-    #define vec_sub_psqt_32(a, b) _mm_sub_epi32(a, b)
-    #define vec_zero_psqt() _mm_setzero_si128()
+    #define vec_set_8(a) _mm_set1_epi8(a)
+    #define vec_unpacklo_8(a, b) _mm_unpacklo_epi8(a, b)
+    #define vec_unpackhi_8(a, b) _mm_unpackhi_epi8(a, b)
 
     #ifdef USE_SSSE3
+        #define vec_maddubs_16(a, b) _mm_maddubs_epi16(a, b)
         #define vec_nnz(a) \
             _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpgt_epi32(a, _mm_setzero_si128())))
     #endif
@@ -174,9 +180,8 @@ using vec_i8x16_t __attribute__((may_alias)) = int8x16_t;
 using vec_u16x8_t __attribute__((may_alias)) = uint16x8_t;
 using vec_i32x4_t __attribute__((may_alias)) = int32x4_t;
 
-using vec_t __attribute__((may_alias))      = int16x8_t;
-using vec_i8_t __attribute__((may_alias))   = int8x16_t;
-using psqt_vec_t __attribute__((may_alias)) = int32x4_t;
+using vec_t __attribute__((may_alias))    = int16x8_t;
+using vec_i8_t __attribute__((may_alias)) = int8x16_t;
     #define vec_load(a) (*(a))
     #define vec_store(a, b) *(a) = (b)
     #define vec_add_16(a, b) vaddq_s16(a, b)
@@ -188,11 +193,6 @@ using psqt_vec_t __attribute__((may_alias)) = int32x4_t;
     #define vec_min_16(a, b) vminq_s16(a, b)
     #define vec_slli_16(a, b) vshlq_s16(a, vec_set_16(b))
     #define vec_packus_16(a, b) reinterpret_cast<vec_t>(vcombine_u8(vqmovun_s16(a), vqmovun_s16(b)))
-    #define vec_load_psqt(a) (*(a))
-    #define vec_store_psqt(a, b) *(a) = (b)
-    #define vec_add_psqt_32(a, b) vaddq_s32(a, b)
-    #define vec_sub_psqt_32(a, b) vsubq_s32(a, b)
-    #define vec_zero_psqt() psqt_vec_t{0}
 
     #define NumRegistersSIMD 16
     #define MaxChunkSize 16
@@ -204,9 +204,8 @@ inline int16x8_t vsubw_high_s8(int16x8_t a, int8x16_t b) { return vsubw_s8(a, vg
     #endif
 
 #elif USE_LASX
-using vec_t      = __m256i;
-using vec_i8_t   = __m128i;
-using psqt_vec_t = __m256i;
+using vec_t    = __m256i;
+using vec_i8_t = __m128i;
 
 inline __m256i lasx_load256(const __m256i* a) {
     return __lasx_xvld(reinterpret_cast<const void*>(a), 0);
@@ -242,11 +241,6 @@ inline __m256i lasx_packus_32(__m256i a, __m256i b) {
     #define vec_slli_16(a, b) __lasx_xvslli_h(a, b)
     // Inverse permuted at load time
     #define vec_packus_16(a, b) lasx_packus_16(a, b)
-    #define vec_load_psqt(a) lasx_load256(a)
-    #define vec_store_psqt(a, b) lasx_store256(a, b)
-    #define vec_add_psqt_32(a, b) __lasx_xvadd_w(a, b)
-    #define vec_sub_psqt_32(a, b) __lasx_xvsub_w(a, b)
-    #define vec_zero_psqt() __lasx_xvldi(0)
     #define vec_nnz(a) lasx_vec_nnz(a)
     #define vec_convert_8_16(a) lasx_cvtepi8_epi16(a)
     #define vec_mulhi_8 __lasx_xvmuh_bu
@@ -279,9 +273,8 @@ inline int lasx_vec_nnz(__m256i a) {
 }
 
 #elif USE_LSX
-using vec_t      = __m128i;
-using vec_i8_t   = u64;
-using psqt_vec_t = __m128i;
+using vec_t    = __m128i;
+using vec_i8_t = u64;
 
 inline __m128i lsx_packus_16(__m128i a, __m128i b) {
     #if defined(__clang__) && defined(__has_builtin) && __has_builtin(__builtin_lsx_vssrani_bu_h)
@@ -311,11 +304,6 @@ inline __m128i lsx_packus_32(__m128i a, __m128i b) {
     #define vec_slli_16(a, b) __lsx_vslli_h(a, b)
     // Inverse permuted at load time
     #define vec_packus_16(a, b) lsx_packus_16(a, b)
-    #define vec_load_psqt(a) (*(a))
-    #define vec_store_psqt(a, b) *(a) = (b)
-    #define vec_add_psqt_32(a, b) __lsx_vadd_w(a, b)
-    #define vec_sub_psqt_32(a, b) __lsx_vsub_w(a, b)
-    #define vec_zero_psqt() __lsx_vldi(0)
 
 inline int lsx_vec_nnz(__m128i a) {
     const __m128i cmp = __lsx_vslt_w(__lsx_vldi(0), a);
@@ -338,6 +326,10 @@ inline __m128i vec_convert_8_16(u64 x) {
 #else
     #undef VECTOR
 
+#endif
+
+#ifdef VECTOR
+static_assert(MaxChunkSize == sizeof(vec_t), "MaxChunkSize must equal one vector.");
 #endif
 
 #if defined(USE_AVX512)
@@ -474,7 +466,7 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
 
 
 // Compute optimal SIMD register count for feature transformer accumulation.
-template<IndexType TransformedFeatureWidth, IndexType HalfDimensions, IndexType PSQTBuckets>
+template<IndexType TransformedFeatureWidth, IndexType HalfDimensions>
 class SIMDTiling {
 #ifdef VECTOR
         // We use __m* types as template arguments, which causes GCC to emit warnings
@@ -516,14 +508,10 @@ class SIMDTiling {
    public:
     static constexpr int NumRegs =
       BestRegisterCount<vec_t, WeightType, TransformedFeatureWidth, NumRegistersSIMD>();
-    static constexpr int NumPsqtRegs =
-      BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
 
-    static constexpr IndexType TileHeight     = NumRegs * sizeof(vec_t) / 2;
-    static constexpr IndexType PsqtTileHeight = NumPsqtRegs * sizeof(psqt_vec_t) / 4;
+    static constexpr IndexType TileHeight = NumRegs * sizeof(vec_t) / 2;
 
     static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
-    static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
 #endif
 };
 

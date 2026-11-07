@@ -37,6 +37,6 @@ struct BenchmarkSetup {
 
 BenchmarkSetup setup_benchmark(std::istream&);
 
-}  // namespace Pikafish
+}  // namespace Pikafish::Benchmark
 
 #endif  // #ifndef BENCHMARK_H_INCLUDED

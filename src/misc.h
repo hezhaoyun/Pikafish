@@ -529,7 +529,6 @@ struct CommandLine {
     CommandLine& operator=(CommandLine&&)      = default;
 
     static std::filesystem::path get_binary_directory(std::filesystem::path argv0);
-    static std::filesystem::path get_working_directory();
 
     int    argc;
     char** argv;
@@ -548,9 +547,7 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     auto it = std::find_if(vec.begin(), vec.end(), pred);
 
     if (it != vec.end())
-    {
         std::rotate(vec.begin(), it, it + 1);
-    }
 }
 }
 

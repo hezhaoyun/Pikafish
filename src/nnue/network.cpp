@@ -109,9 +109,9 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
     return saved;
 }
 
-NetworkOutput Network::evaluate(const Position&    pos,
-                                AccumulatorStack&  accumulatorStack,
-                                AccumulatorCaches& cache) const {
+Value Network::evaluate(const Position&    pos,
+                        AccumulatorStack&  accumulatorStack,
+                        AccumulatorCaches& cache) const {
 
     constexpr u64 alignment = CacheLineSize;
 
@@ -121,11 +121,10 @@ NetworkOutput Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int  bucket     = PSQFeatureSet::make_layer_stack_bucket(pos);
-    const auto psqt       = featureTransformer.transform(pos, accumulatorStack, cache,
-                                                         transformedFeatures, bucket, nnzInfo);
+    const int bucket = PSQFeatureSet::make_layer_stack_bucket(pos);
+    featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
     const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
-    return {static_cast<Value>(psqt / OutputScale), static_cast<Value>(positional / OutputScale)};
+    return static_cast<Value>(positional / OutputScale);
 }
 
 
@@ -190,15 +189,14 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     NnueEvalTrace t{};
     t.correctBucket = PSQFeatureSet::make_layer_stack_bucket(pos);
-    for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
-    {
-        NNZInfo<L1> nnzInfo;
-        const auto materialist = featureTransformer.transform(pos, accumulatorStack, cache,
-                                                              transformedFeatures, bucket, nnzInfo);
-        const auto positional  = network[bucket].propagate(transformedFeatures, nnzInfo);
 
-        t.psqt[bucket]       = static_cast<Value>(materialist / OutputScale);
-        t.positional[bucket] = static_cast<Value>(positional / OutputScale);
+    NNZInfo<L1> nnzInfo;
+    featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
+
+    for (IndexType b = 0; b < LayerStacks; ++b)
+    {
+        const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
+        t.positional[b]       = static_cast<Value>(positional / OutputScale);
     }
 
     return t;
