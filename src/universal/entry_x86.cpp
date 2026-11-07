@@ -1,13 +1,13 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Pikafish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Pikafish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
+  Pikafish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
+  Pikafish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -29,7 +29,7 @@
 extern "C" const struct mach_header_64 _mh_execute_header;
 
     #define DEFINE_BUILD(x) \
-        namespace Stockfish_##x { \
+        namespace Pikafish_##x { \
             extern int main(int argc, char* argv[]); \
         } \
         int entry_##x(int argc, char* argv[]) { \
@@ -41,11 +41,11 @@ extern "C" const struct mach_header_64 _mh_execute_header;
               getsectiondata(&_mh_execute_header, "__DATA", name, &size)); \
             for (unsigned long i = 0; i < size / sizeof(*fns); i++) \
                 fns[i](); \
-            return Stockfish_##x::main(argc, argv); \
+            return Pikafish_##x::main(argc, argv); \
         }
 #else
     #define DEFINE_BUILD(x) \
-        namespace Stockfish_##x { \
+        namespace Pikafish_##x { \
             extern int main(int argc, char* argv[]); \
         } \
         extern "C" void (*__start_##x##_init[])(void); \
@@ -54,7 +54,7 @@ extern "C" const struct mach_header_64 _mh_execute_header;
             unsigned count = __stop_##x##_init - __start_##x##_init; \
             for (unsigned i = 0; i < count; i++) \
                 __start_##x##_init[i](); \
-            return Stockfish_##x::main(argc, argv); \
+            return Pikafish_##x::main(argc, argv); \
         }
 #endif
 
