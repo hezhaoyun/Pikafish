@@ -56,6 +56,6 @@ int engineMain(int argc, char* argv[]) {
 }  // namespace Pikafish
 
     #ifdef UNIVERSAL_NEEDS_MAIN_SHIM
-int main(int argc, char* argv[]) { return Pikafish::main(argc, argv); }
+int engineMain(int argc, char* argv[]) { return Pikafish::engineMain(argc, argv); }
     #endif
 #endif
